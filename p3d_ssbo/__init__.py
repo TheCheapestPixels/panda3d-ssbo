@@ -1,7 +1,12 @@
 import enum
 from collections import defaultdict
+from functools import reduce
 
 from jinja2 import Template
+
+from panda3d.core import GeomEnums
+from panda3d.core import ShaderBuffer
+
 
 class GlType(enum.Enum):
     uint = 1
@@ -11,6 +16,12 @@ class GlType(enum.Enum):
 glsl_types = {
     GlType.uint: 'uint',
     GlType.vec3: 'vec3',
+}
+
+
+byte_sizes = {
+    GlType.uint: 4,
+    GlType.vec3: 16,
 }
 
 
@@ -81,7 +92,6 @@ class Struct:
             glsl_fields.append((field_name, glsl_type, dimensions))
         source = template.render(
             type_name=self.type_name,
-            glsl_type=glsl_type,
             fields=glsl_fields,
         )
         return source
@@ -92,6 +102,33 @@ class Struct:
         source = template.render(order=order)
         return source
 
+    def get_byte_size(self):
+        size = 0
+        for _, field_type, dimensions in self.fields:
+            if field_type in byte_sizes:
+                base_size = byte_sizes[field_type]
+            else:
+                base_size = field_type.get_byte_size()
+            if dimensions:
+                base_size *= reduce(lambda x, y: x*y, dimensions)
+            size += base_size
+        return size
+
 
 class SSBO(Struct):
     local_glsl = local_ssbo_glsl
+
+    def __init__(self, type_name, *fields, initial_data=None):
+        Struct.__init__(self, type_name, *fields)
+        if initial_data is None:
+            size_or_data = self.get_byte_size()
+        else:
+            raise Exception  # Implement conversion of data to bytes
+        self.ssbo = ShaderBuffer(
+            type_name,
+            size_or_data,
+            GeomEnums.UH_static,
+        )
+
+    def get_buffer(self):
+        return self.ssbo

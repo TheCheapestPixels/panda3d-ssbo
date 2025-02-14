@@ -131,20 +131,17 @@ def test_ssbo():
     assert ssbo.get_full_glsl() == expected_ssbo_glsl
 
 
-# num_elements = 2**14
-# particle_struct = Struct(
-#     'Particle',
-#     ('position', GlType.vec3),
-#     ('direction', GlType.vec3),
-#     ('spatialHash', GlType.uint),
-# )
-# hash_entry = Struct(
-#     'HashIndex',
-#     ('start', GlType.uint),
-#     ('length', GlType.uint),
-# )
-# ssbo = SSBO(
-#     'ParticlePool',
-#     ('particles', particle_struct, num_elements),
-#     ('hash_index', hash_entry, 10000),
-# )
+def test_size_simple():
+    ssbo = SSBO('A', ('dud', GlType.uint, (2, 3)))
+    assert ssbo.get_byte_size() == 4*2*3
+
+
+def test_size_complex():
+    struct = Struct(
+        'P',
+        ('pos', GlType.vec3),
+        ('dir', GlType.vec3),
+        ('idx', GlType.uint),
+    )
+    ssbo = SSBO('A', ('particle', struct, 65536))
+    assert ssbo.get_byte_size() == 65536 * (16+16+4)
