@@ -1,6 +1,7 @@
 import enum
 from collections import defaultdict
 from functools import reduce
+from array import array
 
 from jinja2 import Template
 
@@ -10,18 +11,54 @@ from panda3d.core import ShaderBuffer
 
 class GlType(enum.Enum):
     uint = 1
-    vec3 = 2
+    vec2 = 2
+    vec3 = 3
+    vec4 = 4
 
 
 glsl_types = {
     GlType.uint: 'uint',
+    GlType.vec2: 'vec2',
     GlType.vec3: 'vec3',
+    GlType.vec4: 'vec4',
 }
 
 
 byte_sizes = {
     GlType.uint: 4,
+    GlType.vec2: 8,
     GlType.vec3: 16,
+    GlType.vec4: 16,
+}
+
+
+def python_to_bytes_uint(value):
+    v = array('I', [value]).tobytes()
+    assert len(v) == 4
+    return v
+
+
+def python_to_bytes_vec2(value):
+    v = array('f', value).tobytes()
+    assert len(v) == 8
+    return v
+
+
+def python_to_bytes_vec3(value):
+    v = array('f', value).tobytes()
+    assert len(v) == 12
+    return v + b'\x00\x00\x00\x00'
+
+
+def python_to_bytes_vec4(value):
+    v = array('f', value).tobytes()
+    assert len(v) == 16
+    return v
+
+
+python_to_bytes = {
+    GlType.uint: python_to_bytes_uint,
+    GlType.vec3: python_to_bytes_vec3,
 }
 
 
@@ -113,6 +150,14 @@ class Struct:
                 base_size *= reduce(lambda x, y: x*y, dimensions)
             size += base_size
         return size
+
+    def to_bytes(self, data):
+        assert len(data) == len(self.fields)
+        data_bytes = b''
+        for field_data, (_, field_type, dimensions) in zip(data, self.fields):
+            if not dimensions:
+                data_bytes += python_to_bytes[field_type](field_data)
+        return data_bytes
 
 
 class SSBO(Struct):

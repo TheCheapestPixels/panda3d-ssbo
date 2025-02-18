@@ -139,9 +139,22 @@ def test_size_simple():
 def test_size_complex():
     struct = Struct(
         'P',
+        ('pos', GlType.vec3),  # 16 bytes (3*4 + padding)
+        ('dir', GlType.vec3),
+        ('idx', GlType.uint),  # 4 bytes
+    )
+    ssbo = SSBO('A', ('particle', struct, 65536))
+    assert ssbo.get_byte_size() == 65536 * (16+16+4)
+
+
+def test_to_bytes():
+    ssbo = Struct(
+        'P',
         ('pos', GlType.vec3),
         ('dir', GlType.vec3),
         ('idx', GlType.uint),
     )
-    ssbo = SSBO('A', ('particle', struct, 65536))
-    assert ssbo.get_byte_size() == 65536 * (16+16+4)
+    data = [(0,0,0),(0,0,0),0]
+    assert ssbo.to_bytes(data) == b'\x00' * 36
+    data = [(1,2,3),(4,5,6),7]
+    assert ssbo.to_bytes(data) == b'\x00\x00\x80?\x00\x00\x00@\x00\x00@@\x00\x00\x00\x00\x00\x00\x80@\x00\x00\xa0@\x00\x00\xc0@\x00\x00\x00\x00\x07\x00\x00\x00'
