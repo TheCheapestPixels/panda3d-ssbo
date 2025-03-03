@@ -147,14 +147,27 @@ def test_size_complex():
     assert ssbo.get_byte_size() == 65536 * (16+16+4)
 
 
-def test_to_bytes():
+def test_data_zeroes():
     ssbo = Struct(
         'P',
         ('pos', GlType.vec3),
         ('dir', GlType.vec3),
         ('idx', GlType.uint),
     )
-    data = [(0,0,0),(0,0,0),0]
-    assert ssbo.to_bytes(data) == b'\x00' * 36
-    data = [(1,2,3),(4,5,6),7]
-    assert ssbo.to_bytes(data) == b'\x00\x00\x80?\x00\x00\x00@\x00\x00@@\x00\x00\x00\x00\x00\x00\x80@\x00\x00\xa0@\x00\x00\xc0@\x00\x00\x00\x00\x07\x00\x00\x00'
+    data_python = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 0]
+    data_bytes = b'\x00' * 36
+    assert ssbo.to_bytes(data_python) == data_bytes
+    assert ssbo.to_python(data_bytes) == data_python
+
+
+def test_data_values():
+    ssbo = Struct(
+        'P',
+        ('pos', GlType.vec3),
+        ('dir', GlType.vec3),
+        ('idx', GlType.uint),
+    )
+    data_python = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], 7]
+    data_bytes = b'\x00\x00\x80?\x00\x00\x00@\x00\x00@@\x00\x00\x00\x00\x00\x00\x80@\x00\x00\xa0@\x00\x00\xc0@\x00\x00\x00\x00\x07\x00\x00\x00'
+    assert ssbo.to_bytes(data_python) == data_bytes
+    #assert ssbo.to_python(data_bytes) == data_python

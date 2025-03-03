@@ -58,7 +58,55 @@ def python_to_bytes_vec4(value):
 
 python_to_bytes = {
     GlType.uint: python_to_bytes_uint,
+    GlType.vec2: python_to_bytes_vec2,
     GlType.vec3: python_to_bytes_vec3,
+    GlType.vec4: python_to_bytes_vec4,
+}
+
+
+def bytes_to_python_uint(data_bytes):
+    assert len(data_bytes) == 4
+    a = array('I')
+    a.frombytes(data_bytes)
+    v = a.tolist()
+    assert len(v) == 1
+    v = v[0]
+    return v
+
+
+def bytes_to_python_vec2(data_bytes):
+    assert len(data_bytes) == 8
+    a = array('f')
+    a.frombytes(data_bytes)
+    v = a.tolist()
+    assert len(v) == 2
+    return v
+
+
+def bytes_to_python_vec3(data_bytes):
+    assert len(data_bytes) == 16
+    a = array('f')
+    a.frombytes(data_bytes)
+    v = a.tolist()
+    assert len(v) == 4
+    v = v[:3]
+    return v
+
+
+def bytes_to_python_vec4(data_bytes):
+    assert len(data_bytes) == 16
+    a = array('f')
+    a.frombytes(data_bytes)
+    v = a.tolist()
+    assert len(v) == 4
+    return v
+
+
+bytes_to_python = {
+    GlType.uint: bytes_to_python_uint,
+    GlType.vec2: bytes_to_python_vec2,
+    GlType.vec3: bytes_to_python_vec3,
+    GlType.vec4: bytes_to_python_vec4,
 }
 
 
@@ -156,8 +204,40 @@ class Struct:
         data_bytes = b''
         for field_data, (_, field_type, dimensions) in zip(data, self.fields):
             if not dimensions:
-                data_bytes += python_to_bytes[field_type](field_data)
+                if field_type in python_to_bytes:  # Scalar/Vector/Matrix
+                    data_bytes += python_to_bytes[field_type](field_data)
+                else:
+                    data_bytes += field_type.to_bytes(field_data)
+            else:  # Array
+                raise Exception
         return data_bytes
+
+    def to_python(self, data):
+        assert len(data) == self.get_byte_size()
+        decoded_data = []
+        for _, field_type, dimensions in self.fields:
+            if dimensions:
+                d_size = reduce(lambda x, y: x*y, dimensions)
+            else:
+                d_size = 1
+            if field_type in byte_sizes:
+                base_size = byte_sizes[field_type]
+            else:
+                base_size = field_type.get_byte_size()
+            field_data_size = base_size * d_size
+            field_data = data[:field_data_size]
+            py_data = self.field_to_python(field_data, field_type)
+            decoded_data.append(py_data)
+            
+            data = data[field_data_size:]
+        return decoded_data
+
+    def field_to_python(self, data, field_type):
+        if field_type in python_to_bytes:
+            data_py = bytes_to_python[field_type](data)
+        else:
+            data_py = field_type.to_python(data)
+        return data_py
 
 
 class SSBO(Struct):
@@ -168,7 +248,7 @@ class SSBO(Struct):
         if initial_data is None:
             size_or_data = self.get_byte_size()
         else:
-            raise Exception  # Implement conversion of data to bytes
+            size_or_data = self.to_bytes(initial_data)
         self.ssbo = ShaderBuffer(
             type_name,
             size_or_data,
