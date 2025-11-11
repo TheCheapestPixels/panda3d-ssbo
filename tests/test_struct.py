@@ -1,101 +1,12 @@
 from array import array
+import random
 
 from p3d_ssbo.gltypes import GlFloat
 from p3d_ssbo.gltypes import GlVec3
+
 from p3d_ssbo.gltypes import Struct
 from p3d_ssbo.gltypes import Buffer
 from p3d_ssbo.gltypes import BufferSet
-
-
-def test_glsl_float():
-    glsl = GlFloat('myFloat').glsl()
-    assert glsl == 'float myFloat;'
-
-
-def test_glsl_float_array():
-    glsl = GlFloat('myFloat', 1, 2, 3).glsl()
-    assert glsl == 'float myFloat[1][2][3];'
-
-
-def test_size_float():
-    assert GlFloat('myFloat').size() == 4
-    
-
-def test_size_float_array():
-    assert GlFloat('myFloat', 2, 2, 2).size() == 32
-    
-
-def test_pack_float():
-    data_buffer = GlFloat('myFloat').pack(17)
-    assert data_buffer == array('f', [17]).tobytes()
-
-
-def test_pack_float_array():
-    data_buffer = GlFloat('myFloat', 5).pack([1,2,3,4,5])
-    assert data_buffer == array('f', [1,2,3,4,5]).tobytes()
-
-
-def test_unpack_float():
-    byte_data = array('f', [17]).tobytes()
-    py_data = GlFloat('myFloat').unpack(byte_data)
-    assert py_data == 17
-
-
-def test_unpack_float_array():
-    byte_data = array('f', (1,2,3,4,5,6)).tobytes()
-    py_data = GlFloat('myFloat', 2, 3).unpack(byte_data)
-    assert py_data == ((1,2,3), (4,5,6))
-
-
-###
-###  Vec3
-###
-
-
-def test_glsl_vec3():
-    glsl = GlVec3('myVec').glsl()
-    assert glsl == 'vec3 myVec;'
-
-
-def test_glsl_vec3_array():
-    glsl = GlVec3('myVec', 1, 2, 3).glsl()
-    assert glsl == 'vec3 myVec[1][2][3];'
-
-
-def test_size_vec3():
-    assert GlVec3('myVec').size() == 12
-    
-
-def test_size_vec3_array():
-    expected_length = 8 * 16 - 4  # Last element has no trailing padding
-    assert GlVec3('myVec', 2, 2, 2).size() == expected_length
-    
-
-def test_pack_vec3():
-    data_buffer = GlVec3('myVec').pack((1,2,3))
-    assert data_buffer == array('f', [1,2,3]).tobytes()
-
-
-def test_pack_vec3_array():
-    data_buffer = GlVec3('myVec', 2).pack(((1,2,3), (4,5,6)))
-    assert data_buffer == array('f', [1,2,3,0,4,5,6]).tobytes()
-
-
-def test_unpack_vec3():
-    byte_data = array('f', [1,2,3]).tobytes()
-    py_data = GlVec3('myVec').unpack(byte_data)
-    assert py_data == (1,2,3)
-
-
-def test_unpack_vec3_array():
-    byte_data = array('f', (1,2,3,0,4,5,6)).tobytes()
-    py_data = GlVec3('myVec', 2).unpack(byte_data)
-    assert py_data == ((1,2,3), (4,5,6))
-
-
-###
-### Structs
-###
 
 
 def test_glsl_struct_type():
@@ -435,3 +346,39 @@ def test_glsl_buffer_set():
     my_buffer_set = BufferSet(my_buffer_a, my_buffer_b)
     glsl = my_buffer_set.full_glsl()
     assert glsl == double_buffer_glsl
+
+
+def test_buffer_ssbo():
+    basic_type = Struct(
+        'BasicType',
+        GlFloat('foo'),
+    )
+    my_buffer = Buffer(
+        'MyBuffer',
+        basic_type('foo'),
+    )
+    initial_data = ((7,),)
+    shader_buffer = my_buffer.ssbo(initial_data)
+
+
+def test_buffer_ssbo_2():
+    my_buffer = Buffer(
+        'MyBuffer',
+        GlFloat('foo', 200),
+    )
+
+    shader_buffer = my_buffer.ssbo()
+    assert shader_buffer.data_size_bytes == 800
+
+    initial_data = tuple(
+        [
+            tuple(
+                [
+                    random.random()
+                    for _ in range(200)
+                ]
+            )
+        ]
+    )
+    shader_buffer = my_buffer.ssbo(initial_data)
+    assert shader_buffer.data_size_bytes == 800

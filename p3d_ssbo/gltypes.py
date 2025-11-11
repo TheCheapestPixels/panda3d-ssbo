@@ -76,6 +76,8 @@ from array import array
 import math
 
 from panda3d.core import LVecBase3f
+from panda3d.core import ShaderBuffer
+from panda3d.core import GeomEnums
 
 
 class GlType:
@@ -305,11 +307,18 @@ class StructInstance(GlType):
         return types
 
 
-class Buffer:
+class Buffer(GlType):
+    dims = ()
+
     def __init__(self, type_name, *fields):
         self.fields = fields
         self.glsl_type_name = type_name
         self.alignment = max(f.alignment for f in fields)
+        size = 0
+        trailing = 0
+        for field in self.fields:
+            size, trailing = field._size(size, trailing)
+        self.element_size = size
 
     def glsl(self):
         text = f"layout(std430) buffer {self.glsl_type_name} {{\n"
@@ -352,6 +361,18 @@ class Buffer:
         glsl = '\n\n'.join([struct_glsl, buffer_glsl])
         return glsl
 
+    def ssbo(self, initial_data=None):
+        if initial_data is None:
+            size_or_data = self.size()
+        else:
+            size_or_data = self.pack(initial_data)
+        ssbo = ShaderBuffer(
+            self.glsl_type_name,
+            size_or_data,
+            GeomEnums.UH_static,
+        )
+        return ssbo
+        
 
 class BufferSet:
     def __init__(self, *buffers):
