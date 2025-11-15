@@ -9,10 +9,9 @@ from direct.showbase.ShowBase import ShowBase
 from p3d_ssbo.gltypes import GlFloat
 from p3d_ssbo.gltypes import Struct
 from p3d_ssbo.gltypes import Buffer
-
-from p3d_ssbo.tools.random_number_generator import PermutedCongruentialGenerator
-from p3d_ssbo.tools.bitonic_sort import BitonicSort
-from ssbo_card import SSBOCard
+from p3d_ssbo.algos.random_number_generator import PermutedCongruentialGenerator
+from p3d_ssbo.algos.bitonic_sort import BitonicSort
+from p3d_ssbo.tools.ssbo_card import SSBOCard
 
 
 ShowBase()
