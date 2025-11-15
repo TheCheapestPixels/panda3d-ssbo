@@ -242,6 +242,7 @@ class GlVec3(GlType):
 class Struct:
     def __init__(self, type_name, *fields):
         self.fields = fields
+        self.field_by_name = {f.field_name: f for f in fields}
         self.glsl_type_name = type_name
         self.alignment = max(f.alignment for f in fields)
 
@@ -253,7 +254,7 @@ class Struct:
         text = f"struct {self.glsl_type_name} {{\n"
         for field in self.fields:
             text += f"  {field.glsl()}\n"
-        text += "}"
+        text += "};"
         return text
 
     def _get_struct_types(self, types=None):
@@ -273,6 +274,7 @@ class Struct:
 class StructInstance(GlType):
     def __init__(self, type_obj, field_name, dims):
         self.type_obj = type_obj
+        self.glsl_type_name = type_obj.glsl_type_name
         self.field_name = field_name
         self.alignment = self.type_obj.alignment
         self.dims = dims
@@ -306,12 +308,20 @@ class StructInstance(GlType):
             types = self.type_obj._get_struct_types(types)
         return types
 
+    def get_num_elements(self):
+        return self.dims
+
+    def get_field(self, field_name):
+        field = self.type_obj.field_by_name[field_name]
+        return field
+
 
 class Buffer(GlType):
     dims = ()
 
-    def __init__(self, type_name, *fields):
+    def __init__(self, type_name, *fields, initial_data=None):
         self.fields = fields
+        self.field_by_name = {f.field_name: f for f in fields}
         self.glsl_type_name = type_name
         self.alignment = max(f.alignment for f in fields)
         size = 0
@@ -320,11 +330,21 @@ class Buffer(GlType):
             size, trailing = field._size(size, trailing)
         self.element_size = size
 
+        if initial_data is None:
+            size_or_data = self.size()
+        else:
+            size_or_data = self.pack(initial_data)
+        self.ssbo = ShaderBuffer(
+            self.glsl_type_name,
+            size_or_data,
+            GeomEnums.UH_static,
+        )
+
     def glsl(self):
         text = f"layout(std430) buffer {self.glsl_type_name} {{\n"
         for field in self.fields:
             text += f"  {field.glsl()}\n"
-        text += "}"
+        text += "};"
         return text
 
     def _add_element(self, byte_data, py_data):
@@ -361,18 +381,10 @@ class Buffer(GlType):
         glsl = '\n\n'.join([struct_glsl, buffer_glsl])
         return glsl
 
-    def ssbo(self, initial_data=None):
-        if initial_data is None:
-            size_or_data = self.size()
-        else:
-            size_or_data = self.pack(initial_data)
-        ssbo = ShaderBuffer(
-            self.glsl_type_name,
-            size_or_data,
-            GeomEnums.UH_static,
-        )
-        return ssbo
-        
+    def get_field(self, field_name):
+        field = self.field_by_name[field_name]
+        return field
+
 
 class BufferSet:
     def __init__(self, *buffers):

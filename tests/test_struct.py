@@ -1,6 +1,8 @@
 from array import array
 import random
 
+from panda3d.core import ShaderBuffer
+
 from p3d_ssbo.gltypes import GlFloat
 from p3d_ssbo.gltypes import GlVec3
 
@@ -16,7 +18,7 @@ def test_glsl_struct_type():
         GlFloat('bar'),
     )
     glsl = my_struct_type.glsl()
-    assert glsl == 'struct MyStruct {\n  vec3 foo;\n  float bar;\n}'
+    assert glsl == 'struct MyStruct {\n  vec3 foo;\n  float bar;\n};'
 
 
 def test_glsl_struct_instance():
@@ -265,24 +267,24 @@ def test_get_struct_types_buffer_set():
 recursive_buffer_glsl = """
 struct MyBasicStruct {
   float foo;
-}
+};
 
 struct LeftDiamond {
   MyBasicStruct foo;
-}
+};
 
 struct RightDiamond {
   MyBasicStruct foo;
-}
+};
 
 struct Capstone {
   LeftDiamond foo;
   RightDiamond bar;
-}
+};
 
 layout(std430) buffer MyBuffer {
   Capstone cap;
-}"""[1:]
+};"""[1:]
 
 
 def test_glsl_buffer():
@@ -319,15 +321,15 @@ def test_glsl_buffer():
 double_buffer_glsl = """
 struct BasicType {
   float foo;
-}
+};
 
 layout(std430) buffer MyBufferA {
   BasicType foo;
-}
+};
 
 layout(std430) buffer MyBufferB {
   BasicType foo;
-}"""[1:]
+};"""[1:]
 
 
 def test_glsl_buffer_set():
@@ -349,6 +351,7 @@ def test_glsl_buffer_set():
 
 
 def test_buffer_ssbo():
+    initial_data = ((7,),)
     basic_type = Struct(
         'BasicType',
         GlFloat('foo'),
@@ -356,20 +359,12 @@ def test_buffer_ssbo():
     my_buffer = Buffer(
         'MyBuffer',
         basic_type('foo'),
+        initial_data=initial_data,
     )
-    initial_data = ((7,),)
-    shader_buffer = my_buffer.ssbo(initial_data)
+    assert isinstance(my_buffer.ssbo, ShaderBuffer)
 
 
 def test_buffer_ssbo_2():
-    my_buffer = Buffer(
-        'MyBuffer',
-        GlFloat('foo', 200),
-    )
-
-    shader_buffer = my_buffer.ssbo()
-    assert shader_buffer.data_size_bytes == 800
-
     initial_data = tuple(
         [
             tuple(
@@ -380,5 +375,18 @@ def test_buffer_ssbo_2():
             )
         ]
     )
-    shader_buffer = my_buffer.ssbo(initial_data)
+
+    my_buffer = Buffer(
+        'MyBuffer',
+        GlFloat('fl', 200),
+    )
+    shader_buffer = my_buffer.ssbo
+    assert shader_buffer.data_size_bytes == 800
+
+    my_buffer = Buffer(
+        'MyBuffer',
+        GlFloat('fl', 200),
+        initial_data=initial_data,
+    )
+    shader_buffer = my_buffer.ssbo
     assert shader_buffer.data_size_bytes == 800
