@@ -103,7 +103,7 @@ class PermutedCongruentialGenerator:
             base.win.get_gsg(),
         )
 
-    def attach(self, np, bin_sort=0, seed=None):
+    def attach(self, np, bin_sort=0, seed=None, task=None):
         cn = ComputeNode(f"PermutedCongruentialGenerator")
         cn.add_dispatch(self.workgroups)
         cnnp = np.attach_new_node(cn)
@@ -118,6 +118,9 @@ class PermutedCongruentialGenerator:
         cn.set_bounds_type(BoundingVolume.BT_box)
         cn.set_bounds(np.get_bounds())
         self.cnnp = cnnp
+        if task is not None:
+            args, kwargs = task
+            base.task_mgr.add(self.update, *args, **kwargs)
 
     def update(self, task):
         seed = random.randint(0,2**32-1)

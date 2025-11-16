@@ -28,7 +28,12 @@ out vec4 p3d_FragColor;
 
 void main() {
   int idx = int(floor(v_texcoord.x * float({{array}}.length())));
-  p3d_FragColor = vec4({{array}}[idx].{{key}}, 0, 0, 1);
+  float value = {{array}}[idx].{{key}};
+  if (value >= v_texcoord.y) {
+    p3d_FragColor = vec4(1.0 - value, value, 0, 1);
+  } else {
+    p3d_FragColor = vec4(0, 0, 0, 1);
+  }
 }
 """
 
