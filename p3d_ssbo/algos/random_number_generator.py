@@ -111,7 +111,7 @@ class PermutedCongruentialGenerator:
         cnnp.set_shader(self.shader)
         cnnp.set_shader_input(self.ssbo.glsl_type_name, self.ssbo.ssbo)
         if seed is None:
-            seed = random.randint(0,2**32-1)
+            seed = random.randint(0,2**31-1)
         cnnp.set_shader_input('rngSeed', seed)
 
         cnnp.set_bin("preliminary_compute_pass", bin_sort, 0)
@@ -123,6 +123,6 @@ class PermutedCongruentialGenerator:
             base.task_mgr.add(self.update, *args, **kwargs)
 
     def update(self, task):
-        seed = random.randint(0,2**32-1)
+        seed = random.randint(0, 2**31-1)
         self.cnnp.set_shader_input('rngSeed', seed)
         return task.cont
