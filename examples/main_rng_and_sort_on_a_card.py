@@ -33,13 +33,15 @@ ShowBase()
 base.cam.set_pos(0.5, -2.0, 0.5)
 base.accept('escape', base.task_mgr.stop)
 PStatClient.connect()
+base.set_frame_rate_meter(True)
 
 
 # How many numbers do we want to deal with right now?
 # I've managed to use 2**20 (a million) numbers and beyond, but there is
 # a weird pause after caling `base.run()` when using those higher
 # numbers. Debugging is needed.
-num_elements = 2**10
+# The minima are 2**5 for the rng, and 2**6 for the sorter.
+num_elements = 2**6
 print(f"Configured for {num_elements} elements.")
 
 
@@ -69,7 +71,7 @@ data_buffer = Buffer(
     struct('data', num_elements),
     # Remove out the next line, and the buffer will contain no initial
     # data. How surprising.
-    initial_data=make_data(),
+    #initial_data=make_data(),
 )
 print("SSBO created.")
 
