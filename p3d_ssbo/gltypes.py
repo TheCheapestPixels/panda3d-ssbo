@@ -107,6 +107,8 @@ class GlType:
     def size(self):
         "Returns this element's data size, without leading of trailing offsets."
         size, trailing = self._size()
+        size += self._calculate_offset(size, trailing)
+
         return size * 4
 
     def _size(self, size_so_far=0, trailing=0):
@@ -130,6 +132,7 @@ class GlType:
             py_data,
             b''
         )
+        byte_data += b'\x00' * self._calculate_offset(len(byte_data), trailing)
         return byte_data
 
     def _pack(self, py_data, byte_data, rest_dims=None, trailing=0):
