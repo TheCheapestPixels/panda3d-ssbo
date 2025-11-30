@@ -10,6 +10,8 @@
 # * ShaderWrapper.detach()
 # * Evaluate only every nth frame
 
+import random
+
 from panda3d.core import PStatClient
 from panda3d.core import Vec3
 
@@ -19,20 +21,28 @@ from p3d_ssbo.gltypes import GlVec3
 from p3d_ssbo.gltypes import Struct
 from p3d_ssbo.gltypes import Buffer
 from p3d_ssbo.algos.random_number_generator import PermutedCongruentialGenerator
+from p3d_ssbo.algos.random_number_generator import MurmurHash
 from p3d_ssbo.algos.bitonic_sort import BitonicSort
 from p3d_ssbo.tools.ssbo_particles import SSBOParticles
 
 
 ShowBase()
-base.cam.set_pos(0.5, -5.0, 0.5)
+base.cam.set_pos(0.5, -2.0, 0.5)
 base.accept('escape', base.task_mgr.stop)
 PStatClient.connect()
 base.set_frame_rate_meter(True)
 
 
 # The data
-num_elements = 2**5
+num_elements = 2**16
 print(f"Configured for {num_elements} elements.")
+def make_particle_buffer():
+    particle_positions = [
+        ((random.random(), random.random(), random.random()), )
+        for _ in range(num_elements)
+    ]
+    particle_buffer_data = (particle_positions, )
+    return particle_buffer_data
 
 
 struct = Struct(
@@ -42,25 +52,31 @@ struct = Struct(
 data_buffer = Buffer(
     'dataBuffer',
     struct('particles', num_elements),
+    #initial_data=make_particle_buffer(),
 )
 print("SSBO created.")
 
 
 # Visualization
 points = SSBOParticles(base.render, data_buffer, ('particles', 'position'))
+print("Visualization created.")
 
 
 # The compute shaders
 #from panda3d.core import CullBinManager
 #compute_bin = CullBinManager.get_global_ptr().add_bin("preliminary_compute_pass", CullBinManager.BT_fixed, 0)
-rng = PermutedCongruentialGenerator(
+rng = MurmurHash(
+#rng = PermutedCongruentialGenerator(
     data_buffer,
     ('particles', 'position'),
     debug=True,
 )
+print("Shaders created.")
 
 
 rng.attach(points.get_np(), task=((), {}))
+#rng.dispatch()
+print("Shaders dispatched.")
 
 
 # particle_setupper = Shim(

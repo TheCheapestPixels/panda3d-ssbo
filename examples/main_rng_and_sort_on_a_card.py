@@ -24,6 +24,7 @@ from p3d_ssbo.gltypes import GlFloat
 from p3d_ssbo.gltypes import Struct
 from p3d_ssbo.gltypes import Buffer
 from p3d_ssbo.algos.random_number_generator import PermutedCongruentialGenerator
+from p3d_ssbo.algos.random_number_generator import MurmurHash
 from p3d_ssbo.algos.bitonic_sort import BitonicSort
 from p3d_ssbo.tools.ssbo_card import SSBOCard
 
@@ -41,7 +42,7 @@ base.set_frame_rate_meter(True)
 # a weird pause after caling `base.run()` when using those higher
 # numbers. Debugging is needed.
 # The minima are 2**5 for the rng, and 2**6 for the sorter.
-num_elements = 2**6
+num_elements = 2**10
 print(f"Configured for {num_elements} elements.")
 
 
@@ -82,10 +83,11 @@ card = SSBOCard(base.render, data_buffer, ('data', 'value'))
 
 # The compute shaders. The `debug` argument makes them print their GLSL
 # code.
-rng = PermutedCongruentialGenerator(
+rng = MurmurHash(
+#rng = PermutedCongruentialGenerator(
     data_buffer,
     ('data', 'value'),
-    # debug=True,
+    debug=True,
 )
 sorter = BitonicSort(
     data_buffer,

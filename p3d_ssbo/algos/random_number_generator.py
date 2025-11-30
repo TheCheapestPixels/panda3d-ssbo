@@ -61,7 +61,53 @@ void main() {
 """
 
 
-class PermutedCongruentialGenerator:
+mmh3_32_rng_template = """#version 430
+layout (local_size_x = 32, local_size_y = 1) in;
+
+uniform uint rngSeed;
+
+{{ssbo}}
+
+uint state = 0;
+
+uint murmur_32_scramble(uint k) {
+  k *= 0xcc9e2d51;
+  k = (k << 15) | (k >> 17);
+  k *= 0x1b873593;
+  return k;
+}
+
+void mmh3_32_single_round(uint k) {
+  state = state ^ murmur_32_scramble(k);
+  state = (state << 13) | (state >> 19);
+  state = state * 5 + 0xe6546b64;
+
+  state = state ^ uint(1);
+  state = state ^ state >> 16;
+  state = state * 0x85ebca6b;
+  state = state ^ state >> 13;
+  state = state * 0xc2b2ae35;
+  state = state ^ state >> 16;
+}
+
+float mmh3() {
+  mmh3_32_single_round(state ^ uint(gl_GlobalInvocationID.x));
+  return float(state) / 4294967295.0;
+}
+
+void main() {
+  state = rngSeed;
+  uint idx = uint(gl_GlobalInvocationID.x);
+
+  {% for array, key, field_type in targets %}// {{array}}.{{key}} = {{field_type}}
+  {% if field_type=='float' %}{{array}}[idx].{{key}} = mmh3();
+  {% elif field_type=='vec3' %}{{array}}[idx].{{key}} = vec3(mmh3(), mmh3(), mmh3());
+  {% endif %}{% endfor %}
+}
+"""
+
+
+class RandomNumberGenerator:
     def __init__(self, ssbo, *targets, debug=False):
         dims = None
         rng_specs = []
@@ -81,7 +127,7 @@ class PermutedCongruentialGenerator:
             ssbo=ssbo.full_glsl(),
             targets=rng_specs,
         )
-        template = Template(pcg_rng_template)
+        template = Template(self.rng_template)
         source = template.render(**render_args)
         if debug:
             for line_nr, line_txt in enumerate(source.split('\n')):
@@ -96,6 +142,7 @@ class PermutedCongruentialGenerator:
         np = NodePath("dummy")
         np.set_shader(self.shader)
         np.set_shader_input(self.ssbo.glsl_type_name, self.ssbo.ssbo)
+        np.set_shader_input('rngSeed', seed)
         sattr = np.get_attrib(ShaderAttrib)
         base.graphicsEngine.dispatch_compute(
             self.workgroups,
@@ -126,3 +173,11 @@ class PermutedCongruentialGenerator:
         seed = random.randint(0, 2**31-1)
         self.cnnp.set_shader_input('rngSeed', seed)
         return task.cont
+
+
+class PermutedCongruentialGenerator(RandomNumberGenerator):
+    rng_template = pcg_rng_template
+
+
+class MurmurHash(RandomNumberGenerator):
+    rng_template = mmh3_32_rng_template
