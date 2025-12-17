@@ -107,8 +107,12 @@ sorter = BitonicSort(
 # use a different RNG seed each frame, so we can let it create a task,
 # for which we pass the arguments (other than the function that the task
 # will call) to indicate that we want it created.
-rng.attach(card.get_np(), task=((), {}))
-sorter.attach(card.get_np())
+from panda3d.core import CullBinManager
+bin_mgr = CullBinManager.get_global_ptr()
+bin_mgr.add_bin("cmp_generate_data", CullBinManager.BT_fixed, -20)
+bin_mgr.add_bin("cmp_sort_data", CullBinManager.BT_fixed, -10)
+rng.attach(card.get_np(), "cmp_generate_data", task=((), {}))
+sorter.attach(card.get_np(), "cmp_sort_data")
 
 
 # Data extraction

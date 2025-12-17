@@ -150,8 +150,8 @@ class RandomNumberGenerator:
             base.win.get_gsg(),
         )
 
-    def attach(self, np, bin_sort=0, seed=None, task=None):
-        cn = ComputeNode(f"PermutedCongruentialGenerator")
+    def attach(self, np, bin_name, seed=None, task=None):
+        cn = ComputeNode(self.__class__.__name__)
         cn.add_dispatch(self.workgroups)
         cnnp = np.attach_new_node(cn)
 
@@ -161,7 +161,7 @@ class RandomNumberGenerator:
             seed = random.randint(0,2**31-1)
         cnnp.set_shader_input('rngSeed', seed)
 
-        cnnp.set_bin("preliminary_compute_pass", bin_sort, 0)
+        cnnp.set_bin(bin_name, 0)
         cn.set_bounds_type(BoundingVolume.BT_box)
         cn.set_bounds(np.get_bounds())
         self.cnnp = cnnp

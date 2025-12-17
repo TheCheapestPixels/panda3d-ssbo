@@ -189,6 +189,7 @@ class GlType:
                 )[0]
                 for index in range(rest_dims[0])
             )
+            read_at += stride * rest_dims[0]
             trailing = self.alignment
         return py_data, read_at, trailing
 
@@ -212,6 +213,25 @@ class GlFloat(GlType):
         end = (read_at + self.element_size) * 4
         element_byte_data = byte_data[start:end]
         a = array('f')
+        a.frombytes(element_byte_data)
+        py_data = a.tolist()[0]
+        return py_data
+
+
+class GlUInt(GlType):
+    glsl_type_name = 'uint'
+    alignment = 1
+    element_size = 1
+
+    def pack_element(self, py_data):
+        assert isinstance(py_data, int)
+        return array('I', [py_data]).tobytes()
+
+    def unpack_element(self, byte_data, read_at):
+        start = read_at * 4
+        end = (read_at + self.element_size) * 4
+        element_byte_data = byte_data[start:end]
+        a = array('I')
         a.frombytes(element_byte_data)
         py_data = a.tolist()[0]
         return py_data
@@ -357,8 +377,10 @@ class Buffer(GlType):
 
     def _read_element(self, byte_data, read_at):
         struct_py_data = []
-        for field in self.fields:          
+        for field in self.fields:
+            raa = read_at
             py_data, read_at, trailing = field._unpack(byte_data, read_at)
+            print(raa, read_at, trailing)
             struct_py_data.append(py_data)
         return tuple(struct_py_data), self.alignment
 

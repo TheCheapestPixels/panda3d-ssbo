@@ -93,7 +93,7 @@ class BitonicSort:
                 base.win.get_gsg(),
             )
 
-    def attach(self, np, bin_sort=0):
+    def attach(self, np, bin_name):
         for idx, (span, reverse_span) in enumerate(self.sorter_arrays):
             cn = ComputeNode(f"BitonicSort-{idx}")
             cn.add_dispatch(self.workgroups)
@@ -102,6 +102,6 @@ class BitonicSort:
             cnnp.set_shader_input(self.ssbo.glsl_type_name, self.ssbo.ssbo)
             cnnp.set_shader_input('span', span)
             cnnp.set_shader_input('reverseSpan', reverse_span)
-            cnnp.set_bin("preliminary_compute_pass", bin_sort, 0)
+            cnnp.set_bin(bin_name, idx)
             cn.set_bounds_type(BoundingVolume.BT_box)
             cn.set_bounds(np.get_bounds())

@@ -27,14 +27,17 @@ from p3d_ssbo.tools.ssbo_particles import SSBOParticles
 
 
 ShowBase()
-base.cam.set_pos(0.5, -2.0, 0.5)
+gimbal = base.render.attach_new_node("gimbal")
+gimbal.set_pos(0.5, 0.5, 0.5)
+base.cam.reparent_to(gimbal)
+base.cam.set_y(-2.5)
 base.accept('escape', base.task_mgr.stop)
 PStatClient.connect()
 base.set_frame_rate_meter(True)
 
 
 # The data
-num_elements = 2**16
+num_elements = 2**10
 print(f"Configured for {num_elements} elements.")
 def make_particle_buffer():
     particle_positions = [
@@ -63,105 +66,29 @@ print("Visualization created.")
 
 
 # The compute shaders
-#from panda3d.core import CullBinManager
-#compute_bin = CullBinManager.get_global_ptr().add_bin("preliminary_compute_pass", CullBinManager.BT_fixed, 0)
+from panda3d.core import CullBinManager
+bin_mgr = CullBinManager.get_global_ptr()
+bin_mgr.add_bin("cmp_rng_particles", CullBinManager.BT_fixed, -10)
+
+
 rng = MurmurHash(
 #rng = PermutedCongruentialGenerator(
     data_buffer,
     ('particles', 'position'),
-    debug=True,
+    #debug=True,
 )
 print("Shaders created.")
 
 
-rng.attach(points.get_np(), task=((), {}))
-#rng.dispatch()
+#rng.attach(points.get_np(), bin_name="cmp_rng_particles", task=((), {}))
+rng.dispatch()
 print("Shaders dispatched.")
 
 
-# particle_setupper = Shim(
-#     ssbo,
-#     "",
-#     "particles[gl_GlobalInvocationID.x].direction = normalize(particles[gl_GlobalInvocationID.x].position - 0.5);",
-#     (num_elements // 32, 1, 1),
-# )
-
-
-# mover_header = "uniform float dt;"
-# mover_body = """
-#   Particle p = particles[gl_GlobalInvocationID.x];
-#   vec3 newPos = p.position + p.direction * 1.0/60.0/10.0;//dt;
-#   float distFromCenter = length(newPos - 0.5);
-#   float newLength = fract(distFromCenter);
-#   newPos = normalize(newPos - 0.5) * newLength + 0.5;
-#   particles[gl_GlobalInvocationID.x].position = newPos;
-# """
-# particle_mover = Shim(
-#     ssbo,
-#     mover_header,
-#     mover_body,
-#     (num_elements // 32, 1, 1),
-#     debug=True,
-# )
-
-
-# hash_spatially = """const float gridSize = 32.0;
-# 
-# uint pcg_hash(uint input) {
-#   uint state = input * 747796405u + 2891336453u;
-#   uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-#   return (word >> 22u) ^ word;
-# }
-# 
-# uint spatialHash (vec3 pos) {
-#   uvec3 gridCell = floor(pos * gridSize);
-#   uint cellCode = gridCell.x + gridCell.y * int(gridSize) + gridCell.z * int(pow(gridSize, 2));
-#   uint hash = mod(pcg_hash(cellCode), 1000);
-#   return hash;
-# }
-# """
-# hash_particle_positions = Shim(
-#     ssbo,
-#     hash_spatially,
-#     "particles[gl_GlobalInvocationID.x].hash = spatialHash(particles[gl_GlobalInvocationID.x].position * gridSize);",
-#     (num_elements // 32, 1, 1),
-# )
-# sort_particle_hashes = BitonicSort(ssbo, ('particles', 'hash'))
-# 
-# 
-# rng.dispatch()
-# particle_setupper.dispatch()
-# 
-# 
-# np = points.get_np()
-# particle_mover.attach(np, bin_sort=0)
-# hash_particle_positions.attach(np, bin_sort=1)
-# sort_particle_hashes.attach(np, bin_sort=2)
-# # zero_out_hash_key_table
-# # fill_hash_key_table
-# # boid_particles.attach(np, bin_sort=2)
-# 
-# # Data extraction
-# #data = base.win.gsg.get_engine().extract_shader_buffer_data(
-# #    ssbo.get_buffer(),
-# #    base.win.gsg,
-# #)
-# 
-# 
-# def update_shader_inputs(task):
-#     particle_mover.update(dt=globalClock.dt)
-#     return task.cont
-# base.task_mgr.add(update_shader_inputs, sort=-10)
-# 
-# 
-# camera_gimbal = base.render.attach_new_node("")
-# camera_gimbal.set_pos(0.5, 0.5, 0.5)
-# base.cam.reparent_to(camera_gimbal)
-# base.cam.set_y(-2.5)
-# def rotate_camera(task):
-#     camera_gimbal.set_h(camera_gimbal.get_h() + globalClock.dt * 10.0)
-#     return task.cont
-# base.task_mgr.add(rotate_camera)
+def update_camera(task):
+    gimbal.set_h(task.time * 20.0)
+    return task.cont
+base.task_mgr.add(update_camera)
 
 
 print("Starting application...")
