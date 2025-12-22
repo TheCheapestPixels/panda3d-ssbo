@@ -44,11 +44,16 @@ class RawGLSL:
         self.ssbo = ssbo
         self.shader = shader
         self.workgroups = workgroups
+        if shader_args is None:
+            shader_args = dict()
+        self.shader_args = shader_args
 
     def dispatch(self):
         np = NodePath("dummy")
         np.set_shader(self.shader)
         np.set_shader_input(self.ssbo.glsl_type_name, self.ssbo.ssbo)
+        for glsl_name, value in self.shader_args.items():
+            np.set_shader_input(glsl_name, value)            
         sattr = np.get_attrib(ShaderAttrib)
         base.graphicsEngine.dispatch_compute(
             self.workgroups,
@@ -63,8 +68,13 @@ class RawGLSL:
 
         cnnp.set_shader(self.shader)
         cnnp.set_shader_input(self.ssbo.glsl_type_name, self.ssbo.ssbo)
+        for glsl_name, value in self.shader_args.items():
+            cnnp.set_shader_input(glsl_name, value)            
 
         cnnp.set_bin(bin_name, 0)
         cn.set_bounds_type(BoundingVolume.BT_box)
         cn.set_bounds(np.get_bounds())
         self.cnnp = cnnp
+
+    def set_shader_arg(self, name, value):
+        self.cnnp.set_shader_input(name, value)

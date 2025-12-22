@@ -6,6 +6,7 @@ print("pstats connected")
 from panda3d.core import Vec3
 
 from direct.showbase.ShowBase import ShowBase
+from direct.gui.DirectGui import DirectSlider
 
 from p3d_ssbo.gltypes import GlVec3
 from p3d_ssbo.gltypes import GlUInt
@@ -38,8 +39,8 @@ bin_mgr = CullBinManager.get_global_ptr()
 
 
 # The data
-num_elements = 2**10  # Usually has to be a multiple of 32, but because of bitonic sort, it has to be a power of 2 equal or greater than 64.
-grid_res = (4, 4, 4)  # Per-axis number of cells in the spatial hash grid. Product has to be a multiple of 32.
+num_elements = 2**12  # Usually has to be a multiple of 32, but because of bitonic sort, it has to be a power of 2 equal or greater than 64.
+grid_res = (16, 16, 16)  # Per-axis number of cells in the spatial hash grid. Product has to be a multiple of 32.
 grid_vol = (1.0, 1.0, 1.0)
 boids = Struct(
     'Boid',
@@ -142,6 +143,8 @@ pivot_length =  RawGLSL(
     debug=True,
 )
 mover_funcs = """
+uniform float radius;
+
 ivec3 cellIdxToCell (uint cellIdx, ivec3 res) {
   ivec3 cell = ivec3(mod(cellIdx, res.x),
                      mod(floor(cellIdx / res.x), res.y),
@@ -164,7 +167,6 @@ vec3 clampVec(vec3 v, float minL, float maxL) {
 }
 """[1:-1]
 mover_source = """
-  float radius = 0.15;
   float sepRadius = 0.05;
   float minSpeed = 0.0;  // FIXME: Speed times dt
   float maxSpeed = 0.05 * (1.0/60.0);  // FIXME: Replace by dt
@@ -241,6 +243,9 @@ mover = RawGLSL(
         gridRes=grid_res,
         vol=grid_vol,
     ),
+    shader_args=dict(
+        radius=0.15,
+    ),
     debug=True,
 )
 movement_actualizer_source = """
@@ -253,9 +258,25 @@ movement_actualizer = RawGLSL(
     "",
     movement_actualizer_source,
 )
+
+
+def set_radius(*args, **kwargs):
+    mover.set_shader_arg('radius', slider_radius['value'])
+
+# UI
+slider_radius = DirectSlider(
+    range=(0.0, 1.0),
+    value=0.15,
+    pageSize=0.01,
+    command=set_radius,
+)
+
+
 print("Creating particles...")
 points = SSBOParticles(base.render, data_buffer, ('boids', 'pos'))
 print("Particles created.")
+
+
 def setup_debug():
     for shader in [rng, spatial_hash, sorter, pivot_start, pivot_length, mover.attach]:
         shader.dispatch()
