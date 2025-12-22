@@ -260,13 +260,18 @@ movement_actualizer = RawGLSL(
 )
 
 
+# UI
 def set_radius(*args, **kwargs):
     mover.set_shader_arg('radius', slider_radius['value'])
-
-# UI
 slider_radius = DirectSlider(
+    parent=base.a2dTopLeft,
+    frameSize=(0, 1, -0.03, 0.03),
+    pos=(0.02+0.45, 0, -0.05),
+    text="Detection radius",
+    text_scale=0.05,
+    text_pos=(-0.25, -0.015),
     range=(0.0, 1.0),
-    value=0.15,
+    value=mover.shader_args['radius'],
     pageSize=0.01,
     command=set_radius,
 )
