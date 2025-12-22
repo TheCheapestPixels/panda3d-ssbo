@@ -155,9 +155,19 @@ uint cellToCellIdx (ivec3 cell, ivec3 res) {
                  cell.z * res.x * res.y;
   return cellIdx;
 }
+
+vec3 clampVec(vec3 v, float minL, float maxL) {
+  float vL = length(v);
+  float targetL = clamp(vL, minL, maxL);
+  v *= targetL / vL;
+  return v;
+}
 """[1:-1]
 mover_source = """
-  float radius = 0.2;
+  float radius = 0.15;
+  float sepRadius = 0.05;
+  float minSpeed = 0.0;  // FIXME: Speed times dt
+  float maxSpeed = 0.05 * (1.0/60.0);  // FIXME: Replace by dt
 
   // Which boid are we processing? Where is it?
   uint boidIdx = uint(gl_GlobalInvocationID.x);
@@ -182,29 +192,42 @@ mover_source = """
 
   // Value accumulators for the boid.
   uint otherVecs = 0;
-  vec3 sumOfDists = vec3(0);
+  vec3 cohesion = vec3(0);
+  vec3 separation = vec3(0);
 
   uint scanIdx;
+  // For each cell that is considered relevant (because its volume is
+  // less than radius away from the boid's cell), ...
   for (int x=lower.x; x<=upper.x; x++) {
     for (int y=lower.y; y<=upper.y; y++) {
       for (int z=lower.z; z<=upper.z; z++) {
+        // ...consider all boids in it, ...
         scanIdx = cellToCellIdx(ivec3(x, y, z), res);
         Pivot p = pivot[scanIdx];
         for (uint idx = p.start; idx < p.start + p.len; idx++) {
           if (idx != boidIdx) {  // Don't consider yourself, boid!
             vec3 toBoid = boids[idx].pos - pos;
+            // ...and if the boid is in range, ...
             if (length(toBoid) <= radius) {
+              // ...then add the boid-boid calculation to the pile.
               otherVecs++;
-              sumOfDists += toBoid;
+              // Cohesion
+              cohesion += toBoid;
+              separation += normalize(-toBoid) * max(0, sepRadius - length(toBoid));
+              // Alignment: FIXME
             }
           }
         }
       }
     }
   }
+  // We can also do rules that do not involve other boids.
+  // e.g. the walls repel the boid.
 
   if (otherVecs > 0) {
-    boids[boidIdx].nextPos = pos + sumOfDists / otherVecs * 0.01;
+    vec3 move = ((cohesion + 3.0 * separation) / 4.0) / otherVecs;
+    move = clampVec(move, minSpeed, maxSpeed);
+    boids[boidIdx].nextPos = min(max(pos + move, vec3(0)), vec3(1));
   } else {
     boids[boidIdx].nextPos = pos;
   }
