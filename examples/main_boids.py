@@ -38,11 +38,13 @@ bin_mgr = CullBinManager.get_global_ptr()
 
 
 # The data
-num_elements = 2**19  # Usually has to be a multiple of 32, but because of bitonic sort, it has to be a power of 2 equal or greater than 64.
+num_elements = 2**10  # Usually has to be a multiple of 32, but because of bitonic sort, it has to be a power of 2 equal or greater than 64.
 grid_res = (4, 4, 4)  # Per-axis number of cells in the spatial hash grid. Product has to be a multiple of 32.
+grid_vol = (1.0, 1.0, 1.0)
 boids = Struct(
     'Boid',
     GlVec3('pos'),
+    GlVec3('nextPos'),
     #GlVec3('dir'),
     GlUInt('hashIdx'),
 )
@@ -55,7 +57,8 @@ print("Creating data buffer...")
 data_buffer = Buffer(
     'dataBuffer',
     boids('boids', num_elements),
-    pivot('pivot', grid_res[0] * grid_res[1] * grid_res[2])
+    pivot('pivot', grid_res[0] * grid_res[1] * grid_res[2]),
+    #boids('boids', num_elements, unbounded=True),
 )
 print("Data buffer created.")
 
@@ -65,16 +68,19 @@ rng = MurmurHash(
     data_buffer,
     ('boids', 'pos'),
     #('boids', 'dir'),
+    debug=True,
 )
 spatial_hash = SpatialHash(
     data_buffer,
     ('boids', 'pos', 'hashIdx'),  # array, position field, hash field
-    (1.0, 1.0, 1.0),  # Hash grid volume
+    grid_vol,  # Hash grid volume
     grid_res,  # Hash grid resolution
+    debug=True,
 )
 sorter = BitonicSort(
     data_buffer,
     ('boids', 'hashIdx'),
+    debug=True,
 )
 pivot_start_source = """
   uint idx = uint(gl_GlobalInvocationID.x);
@@ -115,7 +121,7 @@ pivot_start =  RawGLSL(
     'boids',
     "",
     pivot_start_source,
-    #debug=True,
+    debug=True,
 )
 pivot_length_source = """
   uint pivotIdx = uint(gl_GlobalInvocationID.x);
@@ -133,32 +139,97 @@ pivot_length =  RawGLSL(
     'pivot',
     "",
     pivot_length_source,
+    debug=True,
 )
+mover_funcs = """
+ivec3 cellIdxToCell (uint cellIdx, ivec3 res) {
+  ivec3 cell = ivec3(mod(cellIdx, res.x),
+                     mod(floor(cellIdx / res.x), res.y),
+                     floor(cellIdx / (res.x * res.y)));
+  return cell;
+}
+
+uint cellToCellIdx (ivec3 cell, ivec3 res) {
+  uint cellIdx = cell.x + 
+                 cell.y * res.x + 
+                 cell.z * res.x * res.y;
+  return cellIdx;
+}
+"""[1:-1]
 mover_source = """
+  float radius = 0.2;
+
+  // Which boid are we processing? Where is it?
   uint boidIdx = uint(gl_GlobalInvocationID.x);
-  uint pivotIdx = boids[boidIdx].hashIdx;
-  Pivot p = pivot[pivotIdx];
   vec3 pos = boids[boidIdx].pos;
 
+  // And where, in terms of spatial hash cell, are we?
+  uint cellIdx = boids[boidIdx].hashIdx;
+  ivec3 res = ivec3({{gridRes[0]}}, {{gridRes[1]}}, {{gridRes[2]}});
+  vec3 vol = vec3({{vol[0]}}, {{vol[1]}}, {{vol[2]}});
+  vec3 cellSize = vec3(vol / res);
+  ivec3 cell = cellIdxToCell(cellIdx, res);
+
+  // The radius, how many cells does it cover?
+  // From where to where will we scan the cell grid?
+  ivec3 reach = ivec3(ceil(vec3(radius) / cellSize));
+  ivec3 lower = cell - reach;
+  lower = max(lower, ivec3(0));
+  lower = min(lower, res);
+  ivec3 upper = (cell + reach);
+  upper = max(upper, ivec3(0));
+  upper = min(upper, res);
+
+  // Value accumulators for the boid.
   uint otherVecs = 0;
-  vec3 sumOfDists;
-  for (uint idx = p.start; idx < p.start + p.len; idx++) {
-    if (idx != boidIdx) {
-      otherVecs++;
-      sumOfDists = boids[idx].pos - pos;
+  vec3 sumOfDists = vec3(0);
+
+  uint scanIdx;
+  for (int x=lower.x; x<=upper.x; x++) {
+    for (int y=lower.y; y<=upper.y; y++) {
+      for (int z=lower.z; z<=upper.z; z++) {
+        scanIdx = cellToCellIdx(ivec3(x, y, z), res);
+        Pivot p = pivot[scanIdx];
+        for (uint idx = p.start; idx < p.start + p.len; idx++) {
+          if (idx != boidIdx) {  // Don't consider yourself, boid!
+            vec3 toBoid = boids[idx].pos - pos;
+            if (length(toBoid) <= radius) {
+              otherVecs++;
+              sumOfDists += toBoid;
+            }
+          }
+        }
+      }
     }
   }
+
   if (otherVecs > 0) {
-    boids[boidIdx].pos += sumOfDists / otherVecs * 0.2;
+    boids[boidIdx].nextPos = pos + sumOfDists / otherVecs * 0.01;
+  } else {
+    boids[boidIdx].nextPos = pos;
   }
 """[1:-1]
 mover = RawGLSL(
     data_buffer,
     'boids',  # Array for determining the number of invocations
-    "",  # source code of functions
+    mover_funcs,  # source code of functions
     mover_source,  # source code of the main function
+    src_args=dict(
+        gridRes=grid_res,
+        vol=grid_vol,
+    ),
+    debug=True,
 )
-
+movement_actualizer_source = """
+  uint idx = gl_GlobalInvocationID.x;
+  boids[idx].pos = boids[idx].nextPos;
+"""[1:-1]
+movement_actualizer = RawGLSL(
+    data_buffer,
+    'boids',
+    "",
+    movement_actualizer_source,
+)
 print("Creating particles...")
 points = SSBOParticles(base.render, data_buffer, ('boids', 'pos'))
 print("Particles created.")
@@ -170,19 +241,20 @@ def setup_debug():
             base.win.gsg,
         )
 def setup_prod():
-    #rng.dispatch()
+    rng.dispatch()
     stages = [
-        #("cmp_spatial_hash", spatial_hash),
-        #("cmp_sort_spatial_hashes", sorter),
-        #("cmp_pivot_table_starts", pivot_start),
-        #("cmp_pivot_table_length", pivot_length),
-        #("cmp_mover", mover),
+        ("cmp_spatial_hash", spatial_hash),
+        ("cmp_sort_spatial_hashes", sorter),
+        ("cmp_pivot_table_starts", pivot_start),
+        ("cmp_pivot_table_length", pivot_length),
+        ("cmp_mover", mover),
+        ("cmp_mover_2", movement_actualizer),
     ]
     for idx, (bin_name, shader) in enumerate(stages):
         bin_mgr.add_bin(bin_name, CullBinManager.BT_fixed, -20+idx)
         shader.attach(points.get_np(), bin_name)
         print(f"Shader {bin_name} attached.")
-print("Shaders definedy.")
+print("Shaders defined.")
 setup_prod()
 print("Shaders set up.")
 
@@ -197,3 +269,4 @@ print("Shaders set up.")
 
 print("Starting main loop...")
 base.run()
+#base.task_mgr.step()

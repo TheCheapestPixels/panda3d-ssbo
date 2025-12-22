@@ -81,15 +81,19 @@ from panda3d.core import GeomEnums
 
 
 class GlType:
-    def __init__(self, field_name, *dims):
+    def __init__(self, field_name, *dims, unbounded=False):
         self.field_name = field_name
         self.dims = dims
+        self.unbounded = unbounded
 
     def glsl(self):
         """
         Return the GLSL string defining the element.
         """
-        dim_string = ''.join(f'[{d}]' for d in self.dims)
+        if self.unbounded:
+            dim_string = ''.join(f'[{d}]' for d in self.dims[:-1]) + '[]'
+        else:
+            dim_string = ''.join(f'[{d}]' for d in self.dims)
         return self.glsl_type_name  + ' ' + self.field_name + dim_string + ';'
 
     def _calculate_offset(self, size_so_far=0, trailing=0):
@@ -269,8 +273,8 @@ class Struct:
         self.glsl_type_name = type_name
         self.alignment = max(f.alignment for f in fields)
 
-    def __call__(self, field_name, *dims):
-        instance = StructInstance(self, field_name, dims)
+    def __call__(self, field_name, *dims, unbounded=False):
+        instance = StructInstance(self, field_name, dims, unbounded=unbounded)
         return instance
 
     def glsl(self):
@@ -295,7 +299,7 @@ class Struct:
 
 
 class StructInstance(GlType):
-    def __init__(self, type_obj, field_name, dims):
+    def __init__(self, type_obj, field_name, dims, unbounded=False):
         self.type_obj = type_obj
         self.glsl_type_name = type_obj.glsl_type_name
         self.field_name = field_name
@@ -306,9 +310,13 @@ class StructInstance(GlType):
         for field in self.type_obj.fields:
             size, trailing = field._size(size, trailing)
         self.element_size = size
+        self.unbounded = unbounded
 
     def glsl(self):
-        dim_string = ''.join(f'[{d}]' for d in self.dims)
+        if self.unbounded:
+            dim_string = ''.join(f'[{d}]' for d in self.dims[:-1]) + '[]'
+        else:
+            dim_string = ''.join(f'[{d}]' for d in self.dims)
         text = f"{self.type_obj.glsl_type_name} {self.field_name}{dim_string};"
         return text
 

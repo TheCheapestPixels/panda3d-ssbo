@@ -21,19 +21,24 @@ void main() {
 
 
 class RawGLSL:
-    def __init__(self, ssbo, target_array, funcs_source, main_source, debug=False):
+    def __init__(self, ssbo, target_array,
+                 funcs_source, main_source,
+                 debug=False, src_args=None, shader_args=None):
         struct = ssbo.get_field(target_array)
         dims = struct.get_num_elements()
+        if src_args == None:
+            src_args = dict()
         render_args = dict(
             ssbo=ssbo.full_glsl(),
             funcs=funcs_source,
             main=main_source,
         )
         template = Template(raw_code_template)
-        source = template.render(**render_args)
+        assembled_source = template.render(**render_args)
+        source = Template(assembled_source).render(**src_args)
         if debug:
             for line_nr, line_txt in enumerate(source.split('\n')):
-                print(f"{line_nr:4d}  {line_txt}")
+                print(f"{line_nr+1:4d}  {line_txt}")
         shader = Shader.make_compute(Shader.SL_GLSL, source)
         workgroups = (dims[0] // 32, 1, 1)
         self.ssbo = ssbo
