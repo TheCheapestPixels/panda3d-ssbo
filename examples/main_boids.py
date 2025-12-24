@@ -1,8 +1,13 @@
+# Welcome to the Boids example, the first application around here that
+# does something *cool*.
+#
+# First let's try dumping data into pstats, because "How fast is it?" is
+# quite an important questions with systems like this.
 from panda3d.core import PStatClient
-print("pstats imported")
 PStatClient.connect()
 PStatClient.mainTick()
-print("pstats connected")
+
+
 from panda3d.core import Vec3
 
 from direct.showbase.ShowBase import ShowBase
@@ -17,15 +22,18 @@ from p3d_ssbo.algos.copy import Copy
 from p3d_ssbo.algos.random_number_generator import MurmurHash
 from p3d_ssbo.algos.spatial_hash import SpatialHash
 from p3d_ssbo.algos.spatial_hash import PivotTable
+from p3d_ssbo.algos.spatial_hash import PairwiseAction
 from p3d_ssbo.algos.bitonic_sort import BitonicSort
 from p3d_ssbo.tools.ssbo_particles import SSBOParticles
 
 
+# Just a quick no-frills setup of the engine...
 ShowBase()
 base.accept('escape', base.task_mgr.stop)
 base.set_frame_rate_meter(True)
 
 
+# The camera shall rotate around the cube...
 gimbal = base.render.attach_new_node("gimbal")
 gimbal.set_pos(0.5, 0.5, 0.5)
 base.cam.reparent_to(gimbal)
@@ -36,14 +44,30 @@ def update_camera(task):
 base.task_mgr.add(update_camera)
 
 
+# FIXME: Square this away somewhere better.
 from panda3d.core import CullBinManager
 bin_mgr = CullBinManager.get_global_ptr()
 
 
-# The data
+# Okay, here the actually interesting things begin. So, what *is* this
+# program?
+# We're implementing boids, an algorithm published by Craig Reynolds in
+# 1986, which was (and is) an important starting point to simulating the
+# behavior of flocks of birds, schools of fish, and groups of people. It
+# does so by calculating for each boid (a data-laden point in space)
+# which other boids are in its vicinity, and whether they are visible to
+# it; If they are, the other boid's influence on this one are calculated
+# so that this boid maintains or improves:
+# * Cohesion: Try to fly close to the other boid,
+# * Separation: ...but not too close,
+# * Alignment: ...and try to fly in the same direction.
+#
+# As the complexity is, in a naive implementation, O(n**2) (as each boid
+# has to consider each other boid)
 num_elements = 2**12  # Usually has to be a multiple of 32, but because of bitonic sort, it has to be a power of 2 equal or greater than 64.
 grid_res = (16, 16, 16)  # Per-axis number of cells in the spatial hash grid. Product has to be a multiple of 32.
-grid_vol = (1.0, 1.0, 1.0)
+grid_vol = (1.0, 1.0, 1.0)  # Spatial volume that is covered by the spatial hash grid.
+
 boids = Struct(
     'Boid',
     GlVec3('pos'),
@@ -84,92 +108,33 @@ pivot = PivotTable(
     data_buffer,
     ('boids', 'hashIdx'),  # What to build the pivot table for.
     ('pivot', 'start', 'len'),  # The pivot table, and where it stores start and length.
-    debug=True,
 )
-mover_funcs = """
+declarations = """
 uniform float radius;
 
-ivec3 cellIdxToCell (uint cellIdx, ivec3 res) {
-  ivec3 cell = ivec3(mod(cellIdx, res.x),
-                     mod(floor(cellIdx / res.x), res.y),
-                     floor(cellIdx / (res.x * res.y)));
-  return cell;
-}
+// Value accumulators for the boid.
+uint otherVecs = 0;
+vec3 cohesion = vec3(0);
+vec3 separation = vec3(0);
 
-uint cellToCellIdx (ivec3 cell, ivec3 res) {
-  uint cellIdx = cell.x + 
-                 cell.y * res.x + 
-                 cell.z * res.x * res.y;
-  return cellIdx;
-}
-
-vec3 clampVec(vec3 v, float minL, float maxL) {
-  float vL = length(v);
-  float targetL = clamp(vL, minL, maxL);
-  v *= targetL / vL;
-  return v;
-}
+float sepRadius = 0.05;
+float minSpeed = 0.0;  // FIXME: Speed times dt
+float maxSpeed = 0.05 * (1.0/60.0);  // FIXME: Replace by dt
 """[1:-1]
-mover_source = """
-  float sepRadius = 0.05;
-  float minSpeed = 0.0;  // FIXME: Speed times dt
-  float maxSpeed = 0.05 * (1.0/60.0);  // FIXME: Replace by dt
-
-  // Which boid are we processing? Where is it?
-  uint boidIdx = uint(gl_GlobalInvocationID.x);
-  vec3 pos = boids[boidIdx].pos;
-
-  // And where, in terms of spatial hash cell, are we?
-  uint cellIdx = boids[boidIdx].hashIdx;
-  ivec3 res = ivec3({{gridRes[0]}}, {{gridRes[1]}}, {{gridRes[2]}});
-  vec3 vol = vec3({{vol[0]}}, {{vol[1]}}, {{vol[2]}});
-  vec3 cellSize = vec3(vol / res);
-  ivec3 cell = cellIdxToCell(cellIdx, res);
-
-  // The radius, how many cells does it cover?
-  // From where to where will we scan the cell grid?
-  ivec3 reach = ivec3(ceil(vec3(radius) / cellSize));
-  ivec3 lower = cell - reach;
-  lower = max(lower, ivec3(0));
-  lower = min(lower, res);
-  ivec3 upper = (cell + reach);
-  upper = max(upper, ivec3(0));
-  upper = min(upper, res);
-
-  // Value accumulators for the boid.
-  uint otherVecs = 0;
-  vec3 cohesion = vec3(0);
-  vec3 separation = vec3(0);
-
-  uint scanIdx;
-  // For each cell that is considered relevant (because its volume is
-  // less than radius away from the boid's cell), ...
-  for (int x=lower.x; x<=upper.x; x++) {
-    for (int y=lower.y; y<=upper.y; y++) {
-      for (int z=lower.z; z<=upper.z; z++) {
-        // ...consider all boids in it, ...
-        scanIdx = cellToCellIdx(ivec3(x, y, z), res);
-        Pivot p = pivot[scanIdx];
-        for (uint idx = p.start; idx < p.start + p.len; idx++) {
-          if (idx != boidIdx) {  // Don't consider yourself, boid!
-            vec3 toBoid = boids[idx].pos - pos;
-            // ...and if the boid is in range, ...
-            if (length(toBoid) <= radius) {
-              // ...then add the boid-boid calculation to the pile.
-              otherVecs++;
-              // Cohesion
-              cohesion += toBoid;
-              separation += normalize(-toBoid) * max(0, sepRadius - length(toBoid));
-              // Alignment: FIXME
-            }
-          }
-        }
-      }
-    }
+processing = """
+  // `a` is the current boid, `b` the nearby boid.
+  vec3 toBoid = b.pos - a.pos;
+  if (length(toBoid) <= radius) {
+    otherVecs++;
+    // Cohesion
+    cohesion += toBoid;
+    separation += normalize(-toBoid) * max(0, sepRadius - length(toBoid));
+    // Alignment: FIXME
   }
-  // We can also do rules that do not involve other boids.
-  // e.g. the walls repel the boid.
-
+"""[1:-1]
+combining = """
+  // After looping over all nearby boids.
+  vec3 pos = boids[boidIdx].pos;
   if (otherVecs > 0) {
     vec3 move = ((cohesion + 3.0 * separation) / 4.0) / otherVecs;
     move = clampVec(move, minSpeed, maxSpeed);
@@ -178,23 +143,23 @@ mover_source = """
     boids[boidIdx].nextPos = pos;
   }
 """[1:-1]
-mover = RawGLSL(
+mover = PairwiseAction(
     data_buffer,
-    'boids',  # Array for determining the number of invocations
-    mover_funcs,  # source code of functions
-    mover_source,  # source code of the main function
+    'boids',
+    'pivot',
+    declarations,
+    processing,
+    combining,
     src_args=dict(
         gridRes=grid_res,
-        vol=grid_vol,
+        gridVol=grid_vol,
     ),
-    shader_args=dict(
-        radius=0.15,
-    ),
+    shader_args=dict(radius=0.15),
+    debug=True,
 )
 movement_actualizer = Copy(
     data_buffer,
     (('boids', 'nextPos'), ('boids', 'pos')),
-    debug=True,
 )
 
 # UI

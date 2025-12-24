@@ -7,7 +7,8 @@ from panda3d.core import Shader
 from panda3d.core import ShaderAttrib
 
 
-spatial_hash_template = """#version 430
+spatial_hash_template = """
+#version 430
 layout (local_size_x = 32, local_size_y = 1) in;
 
 {{ssbo}}
@@ -28,7 +29,7 @@ void main() {
   uint idx = uint(gl_GlobalInvocationID.x);
   {{array}}[idx].{{hash}} = spatialHash({{array}}[idx].{{key}});
 }
-"""
+"""[1:]
 
 
 class SpatialHash:
@@ -246,3 +247,142 @@ class PivotTable:
         cn_l.set_bounds_type(BoundingVolume.BT_box)
         cn_l.set_bounds(np.get_bounds())
         self.cnnp_l = cnnp_l
+
+
+pairwise_action_source = """
+#version 430
+
+layout (local_size_x = 32, local_size_y = 1) in;
+
+ivec3 cellIdxToCell (uint cellIdx, ivec3 res) {
+  ivec3 cell = ivec3(mod(cellIdx, res.x),
+                     mod(floor(cellIdx / res.x), res.y),
+                     floor(cellIdx / (res.x * res.y)));
+  return cell;
+}
+
+uint cellToCellIdx (ivec3 cell, ivec3 res) {
+  uint cellIdx = cell.x + 
+                 cell.y * res.x + 
+                 cell.z * res.x * res.y;
+  return cellIdx;
+}
+
+vec3 clampVec(vec3 v, float minL, float maxL) {
+  float vL = length(v);
+  float targetL = clamp(vL, minL, maxL);
+  v *= targetL / vL;
+  return v;
+}
+
+{{ssbo}}
+
+{{declarations}}
+
+void pairwiseInteraction(Boid a, Boid b) {
+{{pairwise}}
+}
+
+void main() {
+  // Which boid are we processing? Where is it?
+  uint boidIdx = uint(gl_GlobalInvocationID.x);
+
+  // And where, in terms of spatial hash cell, are we?
+  uint cellIdx = boids[boidIdx].hashIdx;
+  ivec3 res = ivec3({{gridRes[0]}}, {{gridRes[1]}}, {{gridRes[2]}});
+  vec3 vol = vec3({{gridVol[0]}}, {{gridVol[1]}}, {{gridVol[2]}});
+  vec3 cellSize = vec3(vol / res);
+  ivec3 cell = cellIdxToCell(cellIdx, res);
+
+  // The radius, how many cells does it cover?
+  // From where to where will we scan the cell grid?
+  ivec3 reach = ivec3(ceil(vec3(radius) / cellSize));
+  ivec3 lower = cell - reach;
+  lower = max(lower, ivec3(0));
+  lower = min(lower, res);
+  ivec3 upper = (cell + reach);
+  upper = max(upper, ivec3(0));
+  upper = min(upper, res);
+
+  uint scanIdx;
+  // For each cell that is considered relevant (because its volume is
+  // less than radius away from the boid's cell), ...
+  for (int x=lower.x; x<=upper.x; x++) {
+    for (int y=lower.y; y<=upper.y; y++) {
+      for (int z=lower.z; z<=upper.z; z++) {
+        // ...consider all boids in it, ...
+        scanIdx = cellToCellIdx(ivec3(x, y, z), res);
+        Pivot p = pivot[scanIdx];
+        for (uint idx = p.start; idx < p.start + p.len; idx++) {
+          if (idx != boidIdx) {  // Don't consider yourself!
+            pairwiseInteraction(boids[boidIdx], boids[idx]);
+          }
+        }
+      }
+    }
+  }
+
+{{postprocessing}}
+}
+"""[1:]
+
+
+class PairwiseAction:
+    def __init__(self, ssbo, particles, pivot_table,
+                 declarations, pairwise, postprocessing,
+                 debug=False, src_args=None, shader_args=None):
+        if src_args is None:
+            src_args = dict()
+        struct = ssbo.get_field(particles)
+        dims = struct.get_num_elements()
+        render_args = dict(
+            ssbo=ssbo.full_glsl(),
+            declarations=declarations,
+            pairwise=pairwise,
+            postprocessing=postprocessing,
+            **src_args,
+        )
+        template = Template(pairwise_action_source)
+        source = template.render(**render_args)
+        if debug:
+            for line_nr, line_txt in enumerate(source.split('\n')):
+                print(f"{line_nr+1:4d}  {line_txt}")
+        shader = Shader.make_compute(Shader.SL_GLSL, source)
+        workgroups = (dims[0] // 32, 1, 1)
+        self.ssbo = ssbo
+        self.shader = shader
+        self.workgroups = workgroups
+        if shader_args is None:
+            shader_args = dict()
+        self.shader_args = shader_args
+
+    def dispatch(self):
+        np = NodePath("dummy")
+        np.set_shader(self.shader)
+        np.set_shader_input(self.ssbo.glsl_type_name, self.ssbo.ssbo)
+        for glsl_name, value in self.shader_args.items():
+            np.set_shader_input(glsl_name, value)            
+        sattr = np.get_attrib(ShaderAttrib)
+        base.graphicsEngine.dispatch_compute(
+            self.workgroups,
+            sattr,
+            base.win.get_gsg(),
+        )
+
+    def attach(self, np, bin_name):
+        cn = ComputeNode(self.__class__.__name__)
+        cn.add_dispatch(self.workgroups)
+        cnnp = np.attach_new_node(cn)
+
+        cnnp.set_shader(self.shader)
+        cnnp.set_shader_input(self.ssbo.glsl_type_name, self.ssbo.ssbo)
+        for glsl_name, value in self.shader_args.items():
+            cnnp.set_shader_input(glsl_name, value)            
+
+        cnnp.set_bin(bin_name, 0)
+        cn.set_bounds_type(BoundingVolume.BT_box)
+        cn.set_bounds(np.get_bounds())
+        self.cnnp = cnnp
+
+    def set_shader_arg(self, name, value):
+        self.cnnp.set_shader_input(name, value)
