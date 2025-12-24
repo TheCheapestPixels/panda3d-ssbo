@@ -13,6 +13,7 @@ from p3d_ssbo.gltypes import GlUInt
 from p3d_ssbo.gltypes import Struct
 from p3d_ssbo.gltypes import Buffer
 from p3d_ssbo.algos.raw_glsl import RawGLSL
+from p3d_ssbo.algos.copy import Copy
 from p3d_ssbo.algos.random_number_generator import MurmurHash
 from p3d_ssbo.algos.spatial_hash import SpatialHash
 from p3d_ssbo.algos.spatial_hash import PivotTable
@@ -190,17 +191,11 @@ mover = RawGLSL(
         radius=0.15,
     ),
 )
-movement_actualizer_source = """
-  uint idx = gl_GlobalInvocationID.x;
-  boids[idx].pos = boids[idx].nextPos;
-"""[1:-1]
-movement_actualizer = RawGLSL(
+movement_actualizer = Copy(
     data_buffer,
-    'boids',
-    "",
-    movement_actualizer_source,
+    (('boids', 'nextPos'), ('boids', 'pos')),
+    debug=True,
 )
-
 
 # UI
 def set_radius(*args, **kwargs):
