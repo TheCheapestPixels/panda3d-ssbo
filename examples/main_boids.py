@@ -39,7 +39,7 @@ gimbal.set_pos(0.5, 0.5, 0.5)
 base.cam.reparent_to(gimbal)
 base.cam.set_y(-2.5)
 def update_camera(task):
-    gimbal.set_h(task.time * 20.0)
+    gimbal.set_h(task.time)  # * 20.0)
     return task.cont
 base.task_mgr.add(update_camera)
 
@@ -111,6 +111,7 @@ pivot = PivotTable(
 )
 declarations = """
 uniform float radius;
+float dt = min(osg_DeltaFrameTime, 1./30.); // n.b. application must run at 30fps minimum!
 
 // Value accumulators for the boid.
 uint otherVecs = 0;
@@ -118,17 +119,25 @@ vec3 cohesion = vec3(0);
 vec3 separation = vec3(0);
 
 float sepRadius = 0.05;
-float minSpeed = 0.0;  // FIXME: Speed times dt
-float maxSpeed = 0.05 * (1.0/60.0);  // FIXME: Replace by dt
+vec3 minSpeed = vec3(0.);  // n.b.: Speed times dt usually; omitted here because of 0 value
+vec3 maxSpeed = vec3(2.5 * dt);
+vec3 vel = vec3(0.05,0.,0.) * dt; // prevailing motion
 """[1:-1]
 processing = """
   // `a` is the current boid, `b` the nearby boid.
   vec3 toBoid = b.pos - a.pos;
-  if (length(toBoid) <= radius) {
+  float dist = length(toBoid);
+  if (dist <= radius) {
     otherVecs++;
+
     // Cohesion
-    cohesion += toBoid;
-    separation += normalize(-toBoid) * max(0, sepRadius - length(toBoid));
+    // cohesion += toBoid;
+    cohesion += normalize(toBoid) * pow(20./dist, 6.);
+
+    // Separation
+    separation -= pow(15./dist, 3.);
+    // separation += normalize(-toBoid) * max(0, sepRadius - length(toBoid));
+
     // Alignment: FIXME
   }
 """[1:-1]
@@ -136,11 +145,14 @@ combining = """
   // After looping over all nearby boids.
   vec3 pos = boids[boidIdx].pos;
   if (otherVecs > 0) {
-    vec3 move = ((cohesion + 3.0 * separation) / 4.0) / otherVecs;
+    // vec3 move = ((cohesion + 3.0 * separation) / 4.0) / otherVecs;
+    vec3 move = (cohesion + separation);
     move = clampVec(move, minSpeed, maxSpeed);
-    boids[boidIdx].nextPos = min(max(pos + move, vec3(0)), vec3(1));
+    vel += move;
+    boids[boidIdx].nextPos = min(max(pos + vel * dt, vec3(0)), vec3(1));
   } else {
-    boids[boidIdx].nextPos = pos;
+    // boids[boidIdx].nextPos = pos + vel * dt;
+    boids[boidIdx].nextPos = mod(pos +  vel * dt, vec3(1));
   }
 """[1:-1]
 mover = PairwiseAction(

@@ -254,6 +254,8 @@ pairwise_action_source = """
 
 layout (local_size_x = 32, local_size_y = 1) in;
 
+uniform float osg_DeltaFrameTime;
+
 ivec3 cellIdxToCell (uint cellIdx, ivec3 res) {
   ivec3 cell = ivec3(mod(cellIdx, res.x),
                      mod(floor(cellIdx / res.x), res.y),
@@ -273,6 +275,15 @@ vec3 clampVec(vec3 v, float minL, float maxL) {
   float targetL = clamp(vL, minL, maxL);
   v *= targetL / vL;
   return v;
+}
+
+vec3 clampVec(vec3 v, vec3 minV, vec3 maxV) {
+  //float vL = length(v);
+  float minL = length(minV);
+  float maxL = length(maxV);
+  //float targetL = clamp(vL, minL, maxL);
+  //v *= targetL / vL;
+  return clampVec(v,minL,maxL);
 }
 
 {{ssbo}}
