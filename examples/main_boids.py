@@ -121,7 +121,7 @@ vec3 separation = vec3(0);
 float sepRadius = 0.05;
 vec3 minSpeed = vec3(0.);  // n.b.: Speed times dt usually; omitted here because of 0 value
 vec3 maxSpeed = vec3(2.5 * dt);
-vec3 vel = vec3(0.05,0.,0.) * dt;
+vec3 vel = vec3(0.05,0.,0.) * dt; // prevailing motion
 """[1:-1]
 processing = """
   // `a` is the current boid, `b` the nearby boid.
@@ -131,8 +131,8 @@ processing = """
     otherVecs++;
 
     // Cohesion
-    cohesion += normalize(toBoid) * pow(20./dist, 6.);
     // cohesion += toBoid;
+    cohesion += normalize(toBoid) * pow(20./dist, 6.);
 
     // Separation
     separation -= pow(15./dist, 3.);
@@ -146,7 +146,7 @@ combining = """
   vec3 pos = boids[boidIdx].pos;
   if (otherVecs > 0) {
     // vec3 move = ((cohesion + 3.0 * separation) / 4.0) / otherVecs;
-    vec3 move = (cohesion * separation);
+    vec3 move = (cohesion + separation);
     move = clampVec(move, minSpeed, maxSpeed);
     vel += move;
     boids[boidIdx].nextPos = min(max(pos + vel * dt, vec3(0)), vec3(1));
