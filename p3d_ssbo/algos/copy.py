@@ -14,22 +14,26 @@ layout (local_size_x = 32, local_size_y = 1) in;
 
 void main() {
   uint idx = gl_GlobalInvocationID.x;
-  {{target_array}}[idx].{{target_field}} = {{source_array}}[idx].{{source_field}};
+{% for ((source_array, source_field), (target_array, target_field)) in copies %}  {{target_array}}[idx].{{target_field}} = {{source_array}}[idx].{{source_field}};
+{% endfor %}
 }
 """
 
 
 class Copy:
-    def __init__(self, ssbo, copy, debug=False):
-        ((source_array, source_field), (target_array, target_field)) = copy
-        struct = ssbo.get_field(source_array)
-        dims = struct.get_num_elements()
+    def __init__(self, ssbo, *copies, debug=False):
+        dims = None
+        for copy in copies:
+            ((source_array, _), _) = copy
+            struct = ssbo.get_field(source_array)
+            struct_dims = struct.get_num_elements()
+            if dims is None:
+                dims = struct_dims
+            else:
+                assert dims == struct_dims, "Copy attempted on arrays of different sizes."
         render_args = dict(
             ssbo=ssbo.full_glsl(),
-            source_array=source_array,
-            source_field=source_field,
-            target_array=target_array,
-            target_field=target_field,
+            copies=copies,
         )
         template = Template(copy_template)
         source = template.render(**render_args)

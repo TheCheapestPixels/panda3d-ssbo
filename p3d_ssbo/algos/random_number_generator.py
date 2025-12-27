@@ -9,8 +9,8 @@ from panda3d.core import ComputeNode
 from panda3d.core import Shader
 from panda3d.core import ShaderAttrib
 
-
-pcg_rng_template = """#version 430
+rng_base_template = """
+#version 430
 #extension GL_ARB_gpu_shader_int64 : require
 
 layout (local_size_x = 32, local_size_y = 1) in;
@@ -19,7 +19,33 @@ uniform int rngSeed;
 
 {{ssbo}}
 
+{{rng_implementation}}
+
+vec3 rngVec3() {
+  return vec3(rngFloat(), rngFloat(), rngFloat());
+}
+
+
+void main() {
+  initRng();
+  uint idx = uint(gl_GlobalInvocationID.x);
+
+  {% for array, key, field_type, low, high in targets %}// {{array}}[idx].{{key}} = {{field_type}}[{{low}}-{{high}}]
+  {% if field_type=='float' %}{{array}}[idx].{{key}} = rngFloat() * ({{high}} - {{low}}) + {{low}};
+  {% elif field_type=='vec3' %}{{array}}[idx].{{key}} = rngVec3() * ({{high}} - {{low}}) + {{low}};
+  {% endif %}{% endfor %}
+}
+"""[1:]
+
+
+pcg_source = """
 uint64_t state = 0;
+
+void initRng() {
+  uint idx = uint(gl_GlobalInvocationID.x);
+  pcg32_init(uint64_t(idx ^ rngSeed));
+}
+
 const uint64_t multiplier = 6364136223846793005ul;
 const uint64_t increment = 1442695040888963407ul;
 
@@ -49,25 +75,15 @@ float pcgf()
     return (pcg32() / float((2<<62) - 1)) / 2.0;
 }
 
-void main() {
-  int idx = int(gl_GlobalInvocationID.x);
-  pcg32_init(uint64_t(idx + rngSeed));
-
-  {% for array, key, field_type in targets %}// {{array}}.{{key}} = {{field_type}}
-  {% if field_type=='float' %}{{array}}[idx].{{key}} = pcgf();
-  {% elif field_type=='vec3' %}{{array}}[idx].{{key}} = vec3(pcgf(), pcgf(), pcgf());
-  {% endif %}{% endfor %}
+void rngInit() {
+  pcg32_init();
 }
-"""
 
-
-mmh3_32_rng_template = """#version 430
-layout (local_size_x = 32, local_size_y = 1) in;
-
-uniform uint rngSeed;
-
-{{ssbo}}
-
+float rngFloat() {
+  return mmh3();
+}
+"""[1:-1]
+mmh3_source = """
 uint state = 0;
 
 uint murmur_32_scramble(uint k) {
@@ -95,16 +111,15 @@ float mmh3() {
   return float(state) / 4294967295.0;
 }
 
-void main() {
-  state = rngSeed;
+void initRng() {
   uint idx = uint(gl_GlobalInvocationID.x);
-
-  {% for array, key, field_type in targets %}// {{array}}.{{key}} = {{field_type}}
-  {% if field_type=='float' %}{{array}}[idx].{{key}} = mmh3();
-  {% elif field_type=='vec3' %}{{array}}[idx].{{key}} = vec3(mmh3(), mmh3(), mmh3());
-  {% endif %}{% endfor %}
+  state = idx ^ rngSeed;
 }
-"""
+
+float rngFloat() {
+  return mmh3();
+}
+"""[1:-1]
 
 
 class RandomNumberGenerator:
@@ -112,7 +127,11 @@ class RandomNumberGenerator:
         dims = None
         rng_specs = []
         for target in targets:
-            array_name, key = target
+            if len(target) == 2:
+                array_name, key = target
+                low, high = 0.0, 1.0
+            else:
+                array_name, key, low, high = target
             struct = ssbo.get_field(array_name)
             field_type = struct.get_field(key).glsl_type_name
             if dims is None:
@@ -121,13 +140,14 @@ class RandomNumberGenerator:
             else:
                 assert dims == struct.get_num_elements(), "Working on differently-sized arrays."
             rng_specs.append(
-                (array_name, key, field_type)
+                (array_name, key, field_type, low, high)
             )
         render_args = dict(
             ssbo=ssbo.full_glsl(),
             targets=rng_specs,
+            rng_implementation=self.rng_template,
         )
-        template = Template(self.rng_template)
+        template = Template(rng_base_template)
         source = template.render(**render_args)
         if debug:
             for line_nr, line_txt in enumerate(source.split('\n')):
@@ -176,8 +196,8 @@ class RandomNumberGenerator:
 
 
 class PermutedCongruentialGenerator(RandomNumberGenerator):
-    rng_template = pcg_rng_template
+    rng_template = pcg_source
 
 
 class MurmurHash(RandomNumberGenerator):
-    rng_template = mmh3_32_rng_template
+    rng_template = mmh3_source
