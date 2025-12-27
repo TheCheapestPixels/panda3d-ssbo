@@ -72,7 +72,7 @@ boids = Struct(
     'Boid',
     GlVec3('pos'),
     GlVec3('nextPos'),
-    #GlVec3('dir'),
+    GlVec3('dir'),
     GlUInt('hashIdx'),
 )
 pivot = Struct(
@@ -92,7 +92,8 @@ data_buffer = Buffer(
 rng = MurmurHash(
     data_buffer,
     ('boids', 'pos'),
-    #('boids', 'dir'),
+    ('boids', 'dir', -0.2, 0.2),
+    debug=True,
 )
 spatial_hash = SpatialHash(
     data_buffer,
@@ -139,21 +140,28 @@ processing = """
     // separation += normalize(-toBoid) * max(0, sepRadius - length(toBoid));
 
     // Alignment: FIXME
-  }
+}
 """[1:-1]
 combining = """
-  // After looping over all nearby boids.
+  // // After looping over all nearby boids.
+  // vec3 pos = boids[boidIdx].pos;
+  // if (otherVecs > 0) {
+  //   // vec3 move = ((cohesion + 3.0 * separation) / 4.0) / otherVecs;
+  //   vec3 move = (cohesion + separation);
+  //   move = clampVec(move, minSpeed, maxSpeed);
+  //   vel += move;
+  //   boids[boidIdx].nextPos = min(max(pos + vel * dt, vec3(0)), vec3(1));
+  // } else {
+  //   // boids[boidIdx].nextPos = pos + vel * dt;
+  //   boids[boidIdx].nextPos = mod(pos +  vel * dt, vec3(1));
+  // }
   vec3 pos = boids[boidIdx].pos;
-  if (otherVecs > 0) {
-    // vec3 move = ((cohesion + 3.0 * separation) / 4.0) / otherVecs;
-    vec3 move = (cohesion + separation);
-    move = clampVec(move, minSpeed, maxSpeed);
-    vel += move;
-    boids[boidIdx].nextPos = min(max(pos + vel * dt, vec3(0)), vec3(1));
-  } else {
-    // boids[boidIdx].nextPos = pos + vel * dt;
-    boids[boidIdx].nextPos = mod(pos +  vel * dt, vec3(1));
-  }
+  vec3 dir = boids[boidIdx].dir;
+  vec3 nextPos = pos + dir * 1.0/60.0;
+  nextPos = min(nextPos, 1.0);
+  nextPos = max(nextPos, 0.0);
+  boids[boidIdx].nextPos = nextPos;
+
 """[1:-1]
 mover = PairwiseAction(
     data_buffer,
@@ -167,7 +175,6 @@ mover = PairwiseAction(
         gridVol=grid_vol,
     ),
     shader_args=dict(radius=0.15),
-    debug=True,
 )
 movement_actualizer = Copy(
     data_buffer,
