@@ -39,7 +39,7 @@ gimbal.set_pos(0.5, 0.5, 0.5)
 base.cam.reparent_to(gimbal)
 base.cam.set_y(-2.5)
 def update_camera(task):
-    gimbal.set_h(task.time)  # * 20.0)
+    gimbal.set_h(task.time )  # * 20.0)
     return task.cont
 base.task_mgr.add(update_camera)
 
@@ -67,12 +67,14 @@ bin_mgr = CullBinManager.get_global_ptr()
 num_elements = 2**12  # Usually has to be a multiple of 32, but because of bitonic sort, it has to be a power of 2 equal or greater than 64.
 grid_res = (16, 16, 16)  # Per-axis number of cells in the spatial hash grid. Product has to be a multiple of 32.
 grid_vol = (1.0, 1.0, 1.0)  # Spatial volume that is covered by the spatial hash grid.
+perception_radius = 0.05
 
 boids = Struct(
     'Boid',
     GlVec3('pos'),
-    GlVec3('nextPos'),
     GlVec3('dir'),
+    GlVec3('nextPos'),
+    GlVec3('nextDir'),
     GlUInt('hashIdx'),
 )
 pivot = Struct(
@@ -91,9 +93,8 @@ data_buffer = Buffer(
 # The compute shaders
 rng = MurmurHash(
     data_buffer,
-    ('boids', 'pos'),
+    ('boids', 'pos', 0.1, 0.9),
     ('boids', 'dir', -0.2, 0.2),
-    debug=True,
 )
 spatial_hash = SpatialHash(
     data_buffer,
@@ -112,17 +113,12 @@ pivot = PivotTable(
 )
 declarations = """
 uniform float radius;
-float dt = min(osg_DeltaFrameTime, 1./30.); // n.b. application must run at 30fps minimum!
 
 // Value accumulators for the boid.
 uint otherVecs = 0;
-vec3 cohesion = vec3(0);
-vec3 separation = vec3(0);
-
-float sepRadius = 0.05;
-vec3 minSpeed = vec3(0.);  // n.b.: Speed times dt usually; omitted here because of 0 value
-vec3 maxSpeed = vec3(2.5 * dt);
-vec3 vel = vec3(0.05,0.,0.) * dt; // prevailing motion
+vec3 cohere = vec3(0);
+vec3 align = vec3(0);
+vec3 separate = vec3(0);
 """[1:-1]
 processing = """
   // `a` is the current boid, `b` the nearby boid.
@@ -130,38 +126,77 @@ processing = """
   float dist = length(toBoid);
   if (dist <= radius) {
     otherVecs++;
-
-    // Cohesion
-    // cohesion += toBoid;
-    cohesion += normalize(toBoid) * pow(20./dist, 6.);
-
-    // Separation
-    separation -= pow(15./dist, 3.);
-    // separation += normalize(-toBoid) * max(0, sepRadius - length(toBoid));
-
-    // Alignment: FIXME
+    cohere += b.pos;
+    align += b.dir;
+    separate += -normalize(toBoid) * (1.0 / (length(toBoid) / radius));
 }
 """[1:-1]
 combining = """
-  // // After looping over all nearby boids.
-  // vec3 pos = boids[boidIdx].pos;
-  // if (otherVecs > 0) {
-  //   // vec3 move = ((cohesion + 3.0 * separation) / 4.0) / otherVecs;
-  //   vec3 move = (cohesion + separation);
-  //   move = clampVec(move, minSpeed, maxSpeed);
-  //   vel += move;
-  //   boids[boidIdx].nextPos = min(max(pos + vel * dt, vec3(0)), vec3(1));
-  // } else {
-  //   // boids[boidIdx].nextPos = pos + vel * dt;
-  //   boids[boidIdx].nextPos = mod(pos +  vel * dt, vec3(1));
-  // }
+  // This happens after looping over all nearby boids.
+  // Relevant variables first...
+  float dt = 1.0/60.0;
   vec3 pos = boids[boidIdx].pos;
   vec3 dir = boids[boidIdx].dir;
-  vec3 nextPos = pos + dir * 1.0/60.0;
+
+  // Boid rules
+  if (otherVecs > 0) {
+    // So far, `cohere` and `align` are the sum of the positions / 
+    // directions of the boids around us. Dividing by their number
+    // yields the average position / direction, and subtracting our own
+    // value yields how much we'd have to steer to fully move ourselves
+    // to the center of mass / fully align our direction.
+    cohere = cohere / otherVecs - pos;
+    align = align / otherVecs - dir;
+    separate = separate / otherVecs;
+  }
+
+  // Wall repulsion
+  // Assumes that...
+  // * we're repulsed by all six walls
+  // * We're in the 0-1 cube
+  float wallRepDist = 0.1;
+  vec3 wallRep = vec3(0);
+  if (pos.x < wallRepDist) {
+    wallRep.x = 1.0 - pos.x / wallRepDist;
+  }
+  if (pos.x > 1.0 - wallRepDist) {
+    wallRep.x = -(1.0 - ((1.0 - pos.x) / wallRepDist));
+  }
+  if (pos.y < wallRepDist) {
+    wallRep.y = 1.0 - pos.y / wallRepDist;
+  }
+  if (pos.y > 1.0 - wallRepDist) {
+    wallRep.y = -(1.0 - ((1.0 - pos.y) / wallRepDist));
+  }
+  if (pos.z < wallRepDist) {
+    wallRep.z = 1.0 - pos.z / wallRepDist;
+  }
+  if (pos.z > 1.0 - wallRepDist) {
+    wallRep.z = -(1.0 - ((1.0 - pos.z) / wallRepDist));
+  }
+  
+  vec3 nextPos;
+  vec3 nextDir;
+  vec3 steer = vec3(0);
+  steer += align * 0.5;
+  steer += cohere * 0.5;
+  steer += separate * 0.02;
+  steer += wallRep * 0.1;
+  dir += steer * 0.2;
+  dir = normalize(dir) * clamp(length(dir), 0.2, 0.5);
+  nextPos = pos + dir * dt;
+  nextDir = dir;
+
+  // Boundary condition: Hard walls
   nextPos = min(nextPos, 1.0);
   nextPos = max(nextPos, 0.0);
-  boids[boidIdx].nextPos = nextPos;
 
+  // Limit minimum and maximum speed
+  //nextDir = clampVec(nextDir);
+
+  // Write values into the boid
+  boids[boidIdx].nextPos = nextPos;
+  boids[boidIdx].nextDir = nextDir;
 """[1:-1]
 mover = PairwiseAction(
     data_buffer,
@@ -174,11 +209,13 @@ mover = PairwiseAction(
         gridRes=grid_res,
         gridVol=grid_vol,
     ),
-    shader_args=dict(radius=0.15),
+    shader_args=dict(radius=perception_radius),
 )
 movement_actualizer = Copy(
     data_buffer,
     (('boids', 'nextPos'), ('boids', 'pos')),
+    (('boids', 'nextDir'), ('boids', 'dir')),
+    debug=True,
 )
 
 # UI
