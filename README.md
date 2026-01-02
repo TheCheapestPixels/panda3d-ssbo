@@ -47,7 +47,7 @@ num_elements = value_array.get_num_elements()
 ```
 
 CAVEATS
-* Right now `float` and `vec3` are supported; That's it.
+* Right now `uint`, `float` and `vec3` are supported; That's it.
 * I do not truly trust the code yet, despite all the green tests...
 
 
@@ -85,12 +85,10 @@ data_buffer = Buffer(
 rng = PermutedCongruentialGenerator(
     data_buffer,
     ('data', 'value'),
-    # debug=True,
 )
 sorter = BitonicSort(
     data_buffer,
     ('data', 'value'),
-    debug=True,
 )
 
 
@@ -104,19 +102,23 @@ will run in every frame in which the geometry's bounding volume is in
 the camera's view.
 
 CAVEAT
-* You now have already seen all algorithms currently implemented.
+* These algorithms make many unstated assumptions about the data.
+  * Most work on 1D arrays (stored top-level in the buffer)
+    * ...the size of which is assumed to be a multiple of 32
+    * ...except BitonicSort, which expects a power of 2 greater than 64.
 * The API needs a complete overhaul.
+* All classes are a big copy-and-paste job currently, and need a common
+  base class.
 
 
 ## Tools
-
-Okay, we have *a* tool so far...
 
 * `ssbo_card.SSBOCard`: Generate a quad with CardMaker. Its fragment
   shader will read the element that roughly corresponds with the card's
   UV's `x` elements, and uses it as the red channel. Used in
   `examples/main_rng_and_sort_on_a_card.py` to display sorted random
   numbers as a flickering gradient.
+* `ssbo_particles`: Generate a mesh consisting of points. FIXME
 
 One short-term goal in development is adding the same for particles.
 After that... Who knows?
@@ -131,23 +133,38 @@ After that... Who knows?
 
 ## TODO
 
+* `main_boids.py`
+  * Move GLSL code into its own module
+  * Add weighing and exponent sliders for influences
+  * Influence ranges
+  * More influences
+    * Waypoint
+    * Obstacle
+    * Birds of prey
+* `p3d_ssbo.algos.spatial_hash`
+  * Deal with 2D
+  * `PairwiseAction`
+    * Per-axis-settable boundary condition of "closed" or "looping"
+    * Grid cell selection should select all cells intersecting a sphere,
+      not a box. Up to 50% performance improvement.
 * `gltypes`
-  * Currently, only `float` and `vec3` are supported. Adding the rest
-    should be relatively easy though.
+  * Support more types.
   * API can be prettier.
   * Data should be passable to the buffers after initing the Python
     objects; `ShaderBuffer` creation should be deferrable. Of course,
-    assing data after setting up everything then means dropping the old
+    passing data after setting up everything then means dropping the old
     `ShaderBuffer` object, which may have been picked up by e.g.
     algorithms already.
 * `algos`
-  * There is zero composability.
+  * Common base class, please.
   * The API has to be a lot more flexible.
   * `random_number_generator`
-    * Needs more target types.
+    * Add types as they are implemented as gltypes.
+    * Make ranges settable per element component.
+    * Make distributions settable.
   * `bitonic_sort`
-    * Currently deals only with arrays sized `2**n`.
-* Foundational algorithms
+    * Currently deals only with arrays sized `2**n`; At the least `32*n` should be supported.
+* Implement foundational algorithms
   * [Radix Sort](https://gpuopen.com/download/Introduction_to_GPU_Radix_Sort.pdf)
   * Up-/Downsampling
   * Kernel filters
@@ -157,11 +174,9 @@ After that... Who knows?
   * FFT
   * Kawase downsampling
   * https://en.wikipedia.org/wiki/Jump_flooding_algorithm
-* Application
+* Demo application
   * Fireworks
     * Basic particle system logic
-  * Boids
-    * uses spatial hashing, maybe Barnes-Hut
   * Convolutional Bloom
     * uses FFT
     * https://www.youtube.com/watch?v=ml-5OGZC7vE
