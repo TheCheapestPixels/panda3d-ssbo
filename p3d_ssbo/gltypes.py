@@ -208,7 +208,7 @@ class GlFloat(GlType):
     alignment = 1
     element_size = 1
 
-    def pack_element(self, py_data):
+    def pack_element(self, py_data): 
         assert isinstance(py_data, (int, float))
         return array('f', [py_data]).tobytes()
 
