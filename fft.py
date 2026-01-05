@@ -77,7 +77,6 @@ class Stage:
         self.nodepath.set_shader(self.shader)
         
         # shader_src = shader_src.replace("{{ P1 }}", p1_link) if self.is_p1 else shader_src.replace("{{ P1 }}", general_link)
-        self.nodepath.setShaderInput(ShaderInput('psizevec', Vec2(p_val, self.size)))
 
 class FFT4:
     def __init__(self, size: int = 1024):
@@ -102,6 +101,7 @@ class FFT4:
         for stage in self.stages:
             stage.nodepath.set_shader_input("Block", current_in)
             stage.nodepath.set_shader_input("BlockOut", current_out)
+            stage.nodepath.set_shader_input(ShaderInput('psizevec', Vec2(p_val, self.size)))
             sattr = stage.nodepath.get_attrib(ShaderAttrib)
             gsg = base.win.get_gsg()
             base.graphicsEngine.dispatch_compute(
