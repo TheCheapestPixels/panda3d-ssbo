@@ -30,7 +30,12 @@ void main() {
   int idx = int(floor(v_texcoord.x * float({{array}}.length())));
   float value = {{array}}[idx].{{key}};
   if (value >= v_texcoord.y) {
-    p3d_FragColor = vec4(1.0 - value, value, 0, 1);
+    // 'bar chart' style
+
+    p3d_FragColor = vec4(1.);
+    // 'heat map' style
+    // p3d_FragColor = vec4(1.0 - value, value, 0., 1.);
+
   } else {
     p3d_FragColor = vec4(0, 0, 0, 1);
   }

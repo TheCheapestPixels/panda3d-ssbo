@@ -75,7 +75,7 @@
 from array import array
 import math
 
-from panda3d.core import LVecBase3f
+from panda3d.core import LVecBase3f, LVecBase2f
 from panda3d.core import ShaderBuffer
 from panda3d.core import GeomEnums
 
@@ -238,6 +238,31 @@ class GlUInt(GlType):
         a = array('I')
         a.frombytes(element_byte_data)
         py_data = a.tolist()[0]
+        return py_data
+
+
+class GLVec2(GLType):
+    glsl_type_name = 'vec2'
+    alignment = 4
+    element_size = 2
+
+    def pack_element(self, py_data):
+        if isinstance(py_data, LVecBase2f):
+            x, y = py_data.x, py_data.y
+        else:
+            assert len(py_data) == 2
+            assert all(isinstance(e, (int, float)) for e in py_data)
+            x, y = py_data
+        byte_data = array('f', [x,y]).tobytes()
+        return byte_data
+
+    def unpack_element(self, byte_data, read_at):
+        start = read_at * 4
+        end = (read_at + 2) * 4
+        element_byte_data = byte_data[start:end]
+        a = array('f')
+        a.frombytes(element_byte_data)
+        py_data = tuple(a.tolist())
         return py_data
 
 
