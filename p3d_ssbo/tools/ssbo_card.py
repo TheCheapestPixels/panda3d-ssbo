@@ -1,7 +1,6 @@
 from jinja2 import Template
 
-from panda3d.core import CardMaker
-from panda3d.core import Shader
+from panda3d.core import CardMaker, Shader, CullBinManager
 
 
 vertex_source = """#version 430
@@ -48,7 +47,7 @@ class SSBOCard:
     def __init__(self, parent: NodePath, data_buffer: gltypes.Buffer, *args):
         if len(*args) < 2:
             # buffer contains values
-            array_name = *args
+            array_name = args
             render_args = dict(
                 ssbo=data_buffer.glsl(),
                 array=array_name,
@@ -74,7 +73,10 @@ class SSBOCard:
         )
         cm = cardmaker('card')
         card = parent.attach_new_node(cm.generate())
-        card.set_shader(vis_shader)
+        # card.set_shader(vis_shader)
+        CullBinManager.get_global_ptr().add_bin("SSBOCard", 
+                                                CullBinManager.BT_fixed, 20)
+        vis_shader.attach(card, "SSBOCard")
         card.set_shader_input(
             data_buffer.glsl_type_name,
             data_buffer.ssbo,
@@ -83,3 +85,4 @@ class SSBOCard:
 
     def get_np(self):
         return self.card
+

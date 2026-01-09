@@ -9,6 +9,17 @@ from panda3d.core import (
 )
 from direct.showbase.ShowBase import ShowBase
 from p3d_ssbo.gltypes import GLType, Buffer, GLVec2
+import p3d_ssbo.tools.ssbo_card 
+
+# The cull bin order is input 0 -> fft compute dispatch 10 -> SSBOCard frag 20
+# This version of AndrewSpangler's GPU FFT implementation for panda3d 
+#   can keep a rolling spectrogram going for data input to the SSBO. 
+#       --- Current issues:
+#>if the input doesn't get modified in time, the previous output gets processed
+#   a second time
+#>i think i broke the one-time fft() method with my new setup arrangement
+#>only test sample implemented - todo add audio input stream options
+#>the cull bin thing feels very shaky- can i standardise this more?
 
 DIGIT_REVERSE_SHADER = """
 #version 430
@@ -100,15 +111,14 @@ void main() {
 
 class Radix16FFT:
     def __init__(self, app):
+        # save a reference to app
         self.app = app
         self._setup_context()
-        
-        # Compile Radix-16 FFT Shaders
-        self.dr_node = self._compile(DIGIT_REVERSE_SHADER)
-        self.fft16_node = self._compile(RADIX16_BUTTERFLY_SHADER)
 
-        self.render_output = False
+        # default setting of inv_flag is invalid state 0
+        self.inv_flag = 0
 
+        # initiate buffers as class objects
         self.buffA: Buffer = None
         self.buffB: Buffer = None
 
@@ -119,10 +129,10 @@ class Radix16FFT:
         self.app.win = self.app.graphics_engine.make_output(
             pipe, "fft16_headless", 0, fb_prop, win_prop, GraphicsPipe.BF_refuse_window
         )
+        CullBinManager.get_global_ptr().add_bin("fft_bin",
+                CullBinManager.BT_fixed, 10)
 
     def _compile(self, code):
-        CullBinManager.get_global_ptr().add_bin("fft_bin",
-                CullBinManager.BT_fixed, 0)
         shader = Shader.make_compute(Shader.SL_GLSL, code)
         node = NodePath(ComputeNode("fft16_op"))
         shader.attach(node, "fft_bin")
@@ -143,9 +153,9 @@ class Radix16FFT:
 
             self.fft16_node.set_shader_input("DA", self.buffB)
             self.fft16_node.set_shader_input("DR", self.buffA)
-            self.fft16_node.set_shader_input("nItems", int(n))
+            self.fft16_node.set_shader_input("nItems", int(self.n))
             self.fft16_node.set_shader_input("stage", int(stage_size))
-            self.fft16_node.set_shader_input("inverse", inv_flag)
+            self.fft16_node.set_shader_input("inverse", self.inv_flag)
 
         return node
 
@@ -159,19 +169,30 @@ class Radix16FFT:
         """Download buffer back to NumPy."""
         gsg = self.app.win.get_gsg()
         raw = self.app.graphics_engine.extract_shader_buffer_data(gpu_handle.buffer, gsg)
-        return np.frombuffer(raw, dtype=gpu_handle.cast)
+        out = np.frombuffer(raw, dtype=gpu_handle.cast)
+
+        # --- Visualization ---
+        # Calculate Magnitude Spectrum
+        # We only need the first half (0 to Nyquist frequency)
+        return out # np.abs(out[:self.N // 2])
 
     def fft(self, data, inverse=False):
         """Radix-16 Cooley-Tukey GPU implementation."""
         buf = data if isinstance(data, Buffer) else self.push(data)
+
+        # creating LOCAL n - not set to self.n
         n = buf.n_items
         
-        # Ensure n is a power of 16
+        # Ensure n is a power of 16 - note, also LOCALLY
         log16n = int(math.log(n) / math.log(16))
         if 16 ** log16n != n:
             raise ValueError(f"Size must be power of 16, got {n}")
         
         inv_flag = -1 if inverse else 1
+
+        # Compile Radix-16 FFT Shaders
+        self.dr_node = self._compile(DIGIT_REVERSE_SHADER)
+        self.fft16_node = self._compile(RADIX16_BUTTERFLY_SHADER)
 
         # Digit-Reversal Pass (base 16)
         self.app.graphics_engine.dispatch_compute(
@@ -180,7 +201,7 @@ class Radix16FFT:
         
         # Radix-16 Butterfly Stages
         for s in range(log16n):
-            num_work_items = (self.n // 16) 
+            num_work_items = (n // 16) 
             self.app.graphics_engine.dispatch_compute(
                 ((num_work_items + 63) // 64, 1, 1), 
                 self.fft16_node.get_attrib(ShaderAttrib), 
@@ -190,32 +211,46 @@ class Radix16FFT:
         res = Buffer("output", GLVec2, bind_buffer=self.buffA)
         
         if inverse:
-            return self.fetch(res) / self.n
+            return self.fetch(res) / n
         return res
 
-    def rolling_fft(self, signal, frame_count, window_size=256):
-        # generate window (dirichlet)
-        t = np.linspace(0, 1, window_size) + (frame_count * 0.01)
-        # setup compute fft
-        self.buffA = data if isinstance(data, Buffer) else self.push(data)
-        self.n = self.buffA.n_items
-        
+    # to initialise an fft that runs every tick, with input sent by the following method
+    def setup_rolling_fft(self, window_size: int = None, init_data: Iterable = None, 
+                                inverse: bool = False):
+        # load any initial data sent to buffer A, or the GPU directly
+        if init_data is not None:]
+            self.buffA = data if isinstance(data, Buffer) else self.push(init_data)
+
+        # if window_size is not given, infer from available data, or fall back to default
+        if window_size = None:
+            if self.buffA.n_items > 0:
+                self.n: int = self.buffA.n_items
+            else:
+                # default window size
+                self.n = 256
+        else:
+            # n is the number of samples in the FFT, aka the size of the window of samples
+            self.n = window_size
+
+        # set inverse if inverse:^)
+        self.inv_flag = -1 if inverse else 1
+
+        # Compile Radix-16 FFT Shaders
+        self.dr_node = self._compile(DIGIT_REVERSE_SHADER)
+        self.fft16_node = self._compile(RADIX16_BUTTERFLY_SHADER)
+
         # Ensure n is a power of 16
         self.log16n = int(math.log(self.n) / math.log(16))
-        if 16 ** self.log16n != self.n:
+        if 16 ** log16n != self.n:
             raise ValueError(f"Size must be power of 16, got {self.n}")
-        
-        inv_flag = -1 if inverse else 1
 
-    def fft_tick(self, signal):
-        self.push(signal.asType(np.complex64)
-        complex_result = self.fetch(fft_handle)
+    # call this in the audio input node, which must be set to a cull bin earlier than 5
+    def fft_input(self, signal, frame_count):
+        # this will now be picked up by the card's frag shader via the compute shader's 
+        #   early cull bin timing
+        self.buffA._rewrite_all(np.ascontiguousarray(signal, dtype=np.complex64))
 
-        self.app.graphics_engine.dispatch_compute(
-            ((self.n + 63) // 64, 1, 1), self.dr_node.get_attrib(ShaderAttrib), self.app.win.get_gsg()
-        )
-
-        # this will now be picked up by the card's frag shader due to the compute shader's early bin timing
+        return self.buffA
 
 class FFT16Demo(ShowBase):
     def __init__(self):
@@ -275,34 +310,49 @@ class FFT16Demo(ShowBase):
         print(f"IFFT Time:     {t_inv:.5f}s")
         print(f"Roundtrip Diff: {inv_diff:.3e}")
         print(f"IFFT Valid:    {inv_diff < 1e-1}")
-    
-    def rolling_test(self, task):
+
+    def fft_input(self, task):
         # Create two frequencies: 50Hz and a drifting high frequency
         freq2 = 80 + 20 * np.sin(self.frame_counter * 0.05)
-        signal = np.sin(2 * np.pi * 50 * t) + 0.5 * np.sin(2 * np.pi * freq2 * t)
+        t = np.linspace(0, 1, 
+                        self.window_size) + (self.frame_counter 
+                                             * 0.01) * 2. * np.pi
+        signal = np.sin(50 * t) + 0.5 * np.sin(freq2 * t)
         signal += 0.2 * np.random.randn(self.N) # Add noise
-        
-        # update fft stack
-        # self.hmath.set_out(card)
-        self.hmath.rolling_fft(signal)
 
-        # --- Visualization ---
-        # Calculate Magnitude Spectrum
-        # We only need the first half (0 to Nyquist frequency)
-        magnitudes = np.abs(complex_result[:self.N // 2])
-
+        self.hmath.fft_input(signal, self.frame_counter)
+ 
         self.frame_counter += 1
         return task.cont
+    
+    # run a test signal through the rolling FFT
+    def rolling_test(self):
+        # optional; this is the default value chosen by the fft
+        self.window_size = 256
+        
+        # have a task add input every turn before
+        base.taskmgr.add("fft_input", self.fft_input)
+
+        # add compute shader dispatches
+        self.hmath.setup_rolling_fft(window_size=self.window_size)
+
+        # create card for display and hook up SSBO!
+        card = SSBOCard(base.render, self.buffA, ["fft_output"])
+
 
 if __name__ == "__main__":
+    app = FFT16Demo()
+    CullBinManager.get_global_ptr().add_bin("fft_input_bin",
+                                            CullBinManager.BT_fixed, 0)
+    app.set_bin("fft_input_bin", 0)
+    app.rolling_test()
+
     # Test with different sizes (all powers of 16)
-    sizes = [16**2, 16**3, 16**4, 16**5]  # 256, 4096, 65536
-    
-    for size in sizes:
-        print(f"\n{'='*90}")
-        print(f"Testing N = {size}")
-        print('='*90)
-        app = FFT16Demo()
-        app.run_test(N=size)
-        app.destroy()
-        print()
+    # sizes = [16**2, 16**3, 16**4, 16**5]  # 256, 4096, 65536
+    # for size in sizes:
+        # print(f"\n{'='*90}")
+        # print(f"Testing N = {size}")
+        # print('='*90)
+        # app.run_test(N=size)
+        # app.destroy()
+
