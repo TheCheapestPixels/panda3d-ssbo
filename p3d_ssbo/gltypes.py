@@ -241,7 +241,7 @@ class GlUInt(GlType):
         return py_data
 
 
-class GLVec2(GLType):
+class GlVec2(GlType):
     glsl_type_name = 'vec2'
     alignment = 4
     element_size = 2
@@ -330,7 +330,7 @@ class StructInstance(GlType):
         self.field_name = field_name
         self.alignment = self.type_obj.alignment
         self.dims = dims
-            size = 0
+        size = 0
         trailing = 0
         for field in self.type_obj.fields:
             size, trailing = field._size(size, trailing)
@@ -375,7 +375,7 @@ class StructInstance(GlType):
 class Buffer(GlType):
     dims = ()
 
-    def __init__(self, type_name: str, *fields: GLType, initial_data=None, bind_buffer=None, num_elements=0):
+    def __init__(self, type_name: str, *fields: GlType, initial_data=None, bind_buffer=None, num_elements=0):
         self.fields = fields
         self.field_by_name = {f.field_name: f for f in fields}
         self.glsl_type_name = type_name
@@ -387,26 +387,26 @@ class Buffer(GlType):
         self.element_size = size
         if bind_buffer is not None:
             assert type(bind_buffer) is ShaderBuffer, f'Only ShaderBuffers can be bound to p3d_ssbo.gltypes.Buffer!'
-            size = bind_buffer.data_size_bytes()
+            size = bind_buffer.data_size_bytes
             assert size % self.element_size == 0, f'buffer bound to p3d_ssbo.gltypes.Buffer is not a multiple of {self.element_size} long!'
             self.ssbo = bind_buffer
         else:
             if initial_data is None:
-                size_or_data = self.size()
+                size_or_data = size
             else:
                 size_or_data = self.pack(initial_data)
             self.ssbo = ShaderBuffer(
                 self.glsl_type_name,
                 size_or_data,
-                GeomEnums.UH_static,
+                GeomEnums.UH_static
             )
 
     def glsl(self):
         # generate glsl for declaration of ssbo
-        text = f"layout(std430) buffer {self.glsl_type_name} {{\n"
-        for field in self.fields:
-            text += f"  {field.glsl()}\n"
-        text += "};"
+        field = self.fields[0]
+        text = (f"layout(std430, binding = 0) buffer {self.glsl_type_name} " "{ ") # f"{field.glsl()}"[:-1] "[] " "}")
+        text += f"{field.glsl_type_name} {field.field_name}[];"
+        text += " };"
         return text
 
     def _add_element(self, byte_data, py_data):

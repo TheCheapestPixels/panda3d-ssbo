@@ -190,7 +190,7 @@ class Radix16FFT:
         
         inv_flag = -1 if inverse else 1
 
-        # Compile Radix-16 FFT Shaders
+        # Compile Radix-16 FFT Shaders FIXME recursion
         self.dr_node = self._compile(DIGIT_REVERSE_SHADER)
         self.fft16_node = self._compile(RADIX16_BUTTERFLY_SHADER)
 
@@ -221,10 +221,10 @@ class Radix16FFT:
         if init_data is not None:]
             self.buffA = data if isinstance(data, Buffer) else self.push(init_data)
 
-        # if window_size is not given, infer from available data, or fall back to default
-        if window_size = None:
-            if self.buffA.n_items > 0:
-                self.n: int = self.buffA.n_items
+            # if window_size is not given, infer from available data, or fall back to default
+            if window_size = None:
+                if self.buffA.n_items > 0:
+                    self.n: int = self.buffA.n_items
             else:
                 # default window size
                 self.n = 256
