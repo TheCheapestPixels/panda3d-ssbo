@@ -46,7 +46,7 @@ void main() {
 
 class SSBOCard:
     # this constructor takes either a name for the ssbo data
-    def __init__(self, parent: NodePath, data_buffer, *args):
+    def __init__(self, parent: NodePath, data_buffer, *args, fullscreencard=False):
         if len(args) < 2:
             # buffer contains values
             array_name = args[0]
@@ -76,6 +76,8 @@ class SSBOCard:
             fragment=fragment_source,
         )
         cm = CardMaker('card')
+        if fullscreencard:
+            cm.setFrameFullscreenQuad()
         card = parent.attach_new_node(cm.generate())
         # card.set_shader(vis_shader)
         CullBinManager.get_global_ptr().add_bin("SSBOCard", 
