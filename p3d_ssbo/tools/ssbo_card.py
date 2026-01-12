@@ -1,6 +1,9 @@
 from jinja2 import Template
 
-from panda3d.core import NodePath, CardMaker, Shader, CullBinManager
+from panda3d.core import NodePath
+from panda3d.core import CardMaker
+from panda3d.core import Shader
+from panda3d.core import CullBinManager
 
 vertex_source = """
 #version 430
@@ -15,7 +18,7 @@ void main() {
   v_texcoord = texcoord;
 }
 
-"""[1:-1]
+""".strip()
 
 fragment_template = """
 #version 430
@@ -29,32 +32,29 @@ out vec4 p3d_FragColor;
 
 void main() {
   int idx = int(floor(v_texcoord.x * float({{array}}.length())));
-  //float value = {{array}}[idx].{{key}};
-  float value = {{array}}[idx].x / {{array}}.length();
+  float value = {{array}}[idx].{{key}};
   if (value >= v_texcoord.y) {
-    // 'bar chart' style
-    p3d_FragColor = vec4(1.);
-    // 'heat map' style
-    // p3d_FragColor = vec4(1.0 - value, value, 0., 1.);
+    {{graph}}
   } else {
     p3d_FragColor = vec4(0, 0, 0, 1);
   }
 }
-
-"""[1:-1]
+""".strip()
 
 
 class SSBOCard:
-    # this constructor takes either a name for the ssbo data
-    def __init__(self, parent: NodePath, data_buffer, *args, fullscreencard=False):
+    # pass value_buffer=True if the buffer does not contain structs
+    def __init__(self, parent: NodePath, data_buffer, *args, fullscreencard=False, barchart=True):
         if len(args) < 2:
             # buffer contains values
             array_name = args[0]
             render_args = dict(
                 ssbo=data_buffer.glsl(),
                 array=array_name,
+                key='x',
             )
-        elif len(args) == 2:
+        elif len(args) >= 2:
+            # buffer contains structs
             array_name, key = args
             render_args = dict(
                 ssbo=data_buffer.full_glsl(),
@@ -66,10 +66,14 @@ class SSBOCard:
             # maybe in future this could handle multiple structs
             raise Exception("SSBOCard *args should contain a name for the " + 
                             "SSBO contents (str for values, iterable[str] for structs)")
+        if barchart:
+            # show barchart-style data (hard edges)
+            render_args.append(graph="p3d_FragColor = vec4(1.);")
+        else:
+            # (default) show heatmap-style data (red gradient)
+            render_args.append(graph="p3d_FragColor = vec4(1.0 - value, value, 0., 1.);")
         template = Template(fragment_template)
         fragment_source = template.render(**render_args)
-        # print("SSBOCard FRAG SHADER: ----------")
-        # print(fragment_source)
         vis_shader = Shader.make(
             Shader.SL_GLSL,
             vertex=vertex_source,
@@ -79,11 +83,11 @@ class SSBOCard:
         if fullscreencard:
             cm.setFrameFullscreenQuad()
         card = parent.attach_new_node(cm.generate())
-        # card.set_shader(vis_shader)
+        # add a fixed bin between opaque and transparent
         CullBinManager.get_global_ptr().add_bin("SSBOCard", 
                                                 CullBinManager.BT_fixed, 20)
         card.set_shader(vis_shader)
-        card.set_bin("SSBOCard", 20)
+        card.set_bin("SSBOCard", 25)
         card.set_shader_input(
             data_buffer.glsl_type_name,
             data_buffer.ssbo,
@@ -92,4 +96,3 @@ class SSBOCard:
 
     def get_np(self):
         return self.card
-
