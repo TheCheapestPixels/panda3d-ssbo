@@ -30,7 +30,7 @@ out vec4 p3d_FragColor;
 void main() {
   int idx = int(floor(v_texcoord.x * float({{array}}.length())));
   //float value = {{array}}[idx].{{key}};
-  float value = {{array}}[idx].x;
+  float value = {{array}}[idx].x / {{array}}.length();
   if (value >= v_texcoord.y) {
     // 'bar chart' style
     p3d_FragColor = vec4(1.);
