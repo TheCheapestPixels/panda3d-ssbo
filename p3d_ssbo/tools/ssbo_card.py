@@ -44,7 +44,7 @@ void main() {
 
 class SSBOCard:
     # pass value_buffer=True if the buffer does not contain structs
-    def __init__(self, parent: NodePath, data_buffer, *args, fullscreencard=False, barchart=True):
+    def __init__(self, parent: NodePath, data_buffer, *args, fullscreencard=False, barchart=False):
         if len(args) < 2:
             # buffer contains values
             array_name = args[0]
@@ -68,10 +68,10 @@ class SSBOCard:
                             "SSBO contents (str for values, iterable[str] for structs)")
         if barchart:
             # show barchart-style data (hard edges)
-            render_args.append(graph="p3d_FragColor = vec4(1.);")
+            render_args['graph'] = "p3d_FragColor = vec4(1.);"
         else:
             # (default) show heatmap-style data (red gradient)
-            render_args.append(graph="p3d_FragColor = vec4(1.0 - value, value, 0., 1.);")
+            render_args['graph'] = "p3d_FragColor = vec4(1.0 - value, value, 0., 1.);"
         template = Template(fragment_template)
         fragment_source = template.render(**render_args)
         vis_shader = Shader.make(
