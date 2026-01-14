@@ -58,7 +58,7 @@ def test_size_struct():
         GlFloat('baz'),
     )
     my_struct = my_struct_type('fnord')
-    assert my_struct.size() == 9 * 4
+    assert my_struct.size() == (4 * 2 + 4) * 4  # Two vec3s, and the float padded to alignment
 
 
 def test_size_struct_array():
@@ -68,7 +68,7 @@ def test_size_struct_array():
         GlVec3('bar'),
     )
     my_struct = my_struct_type('fnord', 2)
-    assert my_struct.size() == (4+4+4+3) * 4
+    assert my_struct.size() == ((4+4) * 2) * 4
 
 
 def test_pack_struct():

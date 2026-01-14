@@ -14,11 +14,11 @@ def test_glsl_vec3_array():
 
 
 def test_size_vec3():
-    assert GlVec3('myVec').size() == 12
+    assert GlVec3('myVec').size() == 4*4
     
 
 def test_size_vec3_array():
-    expected_length = 8 * 16 - 4  # Last element has no trailing padding
+    expected_length = 8 * 16
     assert GlVec3('myVec', 2, 2, 2).size() == expected_length
     
 
