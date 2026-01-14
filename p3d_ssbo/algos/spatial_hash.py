@@ -33,12 +33,16 @@ void main() {
 
 
 class SpatialHash:
-    def __init__(self, ssbo, target, volume, resolution, debug=False):
+    def __init__(self, ssbo: Buffer, target: tuple[str], volume, resolution, debug=False):
+        # get variable names for SSBOs
         target_array, target_pos, target_hash = target
+        # build struct for SSBO data
         struct = ssbo.get_field(target_array)
+        # set up compute shader dimensions
         dims = struct.get_num_elements()
         assert len(dims) == 1, "Just 1D arrays for now."
 
+        # get glsl type of pos field in SSBO struct
         pos_type = struct.get_field(target_pos).glsl_type_name
         if pos_type in ('vec2', 'uvec2'):  # 2D space
             assert len(volume) == 2
@@ -49,6 +53,7 @@ class SpatialHash:
         else:
             assert False, "Unsupported position type"
 
+        # Arguments to pass when calling render on the Template
         render_args = dict(
             ssbo=ssbo.full_glsl(),
             array=target_array,
@@ -58,13 +63,18 @@ class SpatialHash:
             vol=volume,
             res=resolution,
         )
+        # construct jinja template for the spatial hash
         template = Template(spatial_hash_template)
+        # run render method on template with args specified above
         source = template.render(**render_args)
         if debug:
             for line_nr, line_txt in enumerate(source.split('\n')):
                 print(f"{line_nr:4d}  {line_txt}")
+        # create the compute shader
         shader = Shader.make_compute(Shader.SL_GLSL, source)
+        # calculate workgroups with dimensions calculated above from struct
         workgroups = (dims[0] // 32, 1, 1)
+        # save local variables
         self.ssbo = ssbo
         self.shader = shader
         self.workgroups = workgroups

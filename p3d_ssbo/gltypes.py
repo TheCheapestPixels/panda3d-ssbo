@@ -75,6 +75,7 @@
 from array import array
 import math
 
+from panda3d.core import LVecBase2f
 from panda3d.core import LVecBase3f
 from panda3d.core import ShaderBuffer
 from panda3d.core import GeomEnums
@@ -241,6 +242,31 @@ class GlUInt(GlType):
         return py_data
 
 
+class GlVec2(GlType):
+    glsl_type_name = 'vec2'
+    alignment = 4
+    element_size = 2
+
+    def pack_element(self, py_data):
+        if isinstance(py_data, LVecBase2f):
+            x, y = py_data.x, py_data.y
+        else:
+            assert len(py_data) == 2
+            assert all(isinstance(e, (int, float)) for e in py_data)
+            x, y = py_data
+        byte_data = array('f', [x,y]).tobytes()
+        return byte_data
+
+    def unpack_element(self, byte_data, read_at):
+        start = read_at * 4
+        end = (read_at + 2) * 4
+        element_byte_data = byte_data[start:end]
+        a = array('f')
+        a.frombytes(element_byte_data)
+        py_data = tuple(a.tolist())
+        return py_data
+
+
 class GlVec3(GlType):
     glsl_type_name = 'vec3'
     alignment = 4
@@ -350,7 +376,7 @@ class StructInstance(GlType):
 class Buffer(GlType):
     dims = ()
 
-    def __init__(self, type_name, *fields, initial_data=None):
+    def __init__(self, type_name: str, *fields: GlType, initial_data=None, bind_buffer=None, num_elements=0):
         self.fields = fields
         self.field_by_name = {f.field_name: f for f in fields}
         self.glsl_type_name = type_name
@@ -360,22 +386,28 @@ class Buffer(GlType):
         for field in self.fields:
             size, trailing = field._size(size, trailing)
         self.element_size = size
-
-        if initial_data is None:
-            size_or_data = self.size()
+        if bind_buffer is not None:
+            assert type(bind_buffer) is ShaderBuffer, f'Only ShaderBuffers can be bound to p3d_ssbo.gltypes.Buffer!'
+            size = bind_buffer.data_size_bytes
+            assert size % self.element_size == 0, f'buffer bound to p3d_ssbo.gltypes.Buffer is not a multiple of {self.element_size} long!'
+            self.ssbo = bind_buffer
         else:
-            size_or_data = self.pack(initial_data)
-        self.ssbo = ShaderBuffer(
-            self.glsl_type_name,
-            size_or_data,
-            GeomEnums.UH_static,
-        )
+            if initial_data is None:
+                size_or_data = size
+            else:
+                size_or_data = self.pack(initial_data)
+            self.ssbo = ShaderBuffer(
+                self.glsl_type_name,
+                size_or_data,
+                GeomEnums.UH_static
+            )
 
     def glsl(self):
-        text = f"layout(std430) buffer {self.glsl_type_name} {{\n"
-        for field in self.fields:
-            text += f"  {field.glsl()}\n"
-        text += "};"
+        # generate glsl for declaration of ssbo
+        field = self.fields[0]
+        text = (f"layout(std430, binding = 0) buffer {self.glsl_type_name} " "{ ") # f"{field.glsl()}"[:-1] "[] " "}")
+        text += f"{field.glsl_type_name} {field.field_name}[];"
+        text += " };"
         return text
 
     def _add_element(self, byte_data, py_data):
@@ -408,6 +440,7 @@ class Buffer(GlType):
         return [self]
 
     def full_glsl(self):
+        # generate glsl for declaration of ssbo and structs contained in it
         structs = self._get_struct_types()
         struct_glsl = '\n\n'.join([s.glsl() for s in structs])
         buffer_glsl = self.glsl()
