@@ -17,8 +17,8 @@ void main() {
   gl_Position = p3d_ModelViewProjectionMatrix * vertex;
   v_texcoord = texcoord;
 }
-
 """.strip()
+
 
 fragment_template = """
 #version 430
@@ -44,28 +44,14 @@ void main() {
 
 class SSBOCard:
     # pass value_buffer=True if the buffer does not contain structs
-    def __init__(self, parent: NodePath, data_buffer, *args, fullscreencard=False, barchart=False):
-        if len(args) < 2:
-            # buffer contains values
-            array_name = args[0]
-            render_args = dict(
-                ssbo=data_buffer.glsl(),
-                array=array_name,
-                key='x',
-            )
-        elif len(args) >= 2:
-            # buffer contains structs
-            array_name, key = args
-            render_args = dict(
-                ssbo=data_buffer.full_glsl(),
-                array=array_name,
-                key=key,
-            )
-        else:
-            # this should really only have two overloads right?
-            # maybe in future this could handle multiple structs
-            raise Exception("SSBOCard *args should contain a name for the " + 
-                            "SSBO contents (str for values, iterable[str] for structs)")
+    def __init__(self, parent: NodePath, data_buffer, array_and_key, fullscreencard=False, barchart=False, debug=False):
+        array_name, key = array_and_key
+        render_args = dict(
+            ssbo=data_buffer.full_glsl(),
+            array=array_name,
+            key=key,
+        )
+        #import pdb; pdb.set_trace()
         if barchart:
             # show barchart-style data (hard edges)
             render_args['graph'] = "p3d_FragColor = vec4(1.);"
@@ -74,11 +60,22 @@ class SSBOCard:
             render_args['graph'] = "p3d_FragColor = vec4(1.0 - value, value, 0., 1.);"
         template = Template(fragment_template)
         fragment_source = template.render(**render_args)
+        if debug:
+            print(self.__class__.__name__ + "::vertex")
+            for line_nr, line_txt in enumerate(vertex_source.split('\n')):
+                print(f"{line_nr:4d}  {line_txt}")
+            print(self.__class__.__name__ + "::fragment")
+            for line_nr, line_txt in enumerate(fragment_source.split('\n')):
+                print(f"{line_nr:4d}  {line_txt}")
+
         vis_shader = Shader.make(
             Shader.SL_GLSL,
             vertex=vertex_source,
             fragment=fragment_source,
         )
+        if vis_shader is None:
+            print("Couldn't compile SSBOCard shaders!")
+            raise Exception
         cm = CardMaker('card')
         if fullscreencard:
             cm.setFrameFullscreenQuad()

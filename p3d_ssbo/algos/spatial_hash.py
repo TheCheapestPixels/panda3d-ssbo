@@ -6,6 +6,8 @@ from panda3d.core import ComputeNode
 from panda3d.core import Shader
 from panda3d.core import ShaderAttrib
 
+from p3d_ssbo.gltypes import Buffer
+
 
 spatial_hash_template = """
 #version 430
@@ -72,6 +74,7 @@ class SpatialHash:
                 print(f"{line_nr:4d}  {line_txt}")
         # create the compute shader
         shader = Shader.make_compute(Shader.SL_GLSL, source)
+        shader.set_filename(Shader.STCompute, self.__class__.__name__)
         # calculate workgroups with dimensions calculated above from struct
         workgroups = (dims[0] // 32, 1, 1)
         # save local variables
@@ -194,6 +197,7 @@ class PivotTable:
             for line_nr, line_txt in enumerate(source_start.split('\n')):
                 print(f"{line_nr+1:4d}  {line_txt}")
         shader_start = Shader.make_compute(Shader.SL_GLSL, source_start)
+        shader_start.set_filename(Shader.STCompute, self.__class__.__name__ + "::start")
         workgroups_start = (list_dims[0] // 32, 1, 1)
         self.shader_start = shader_start
         self.workgroups_start = workgroups_start
@@ -208,6 +212,7 @@ class PivotTable:
             for line_nr, line_txt in enumerate(source_length.split('\n')):
                 print(f"{line_nr+1:4d}  {line_txt}")
         shader_length = Shader.make_compute(Shader.SL_GLSL, source_length)
+        shader_start.set_filename(Shader.STCompute, self.__class__.__name__ + "::length")
         workgroups_length = (table_dims[0] // 32, 1, 1)
         self.shader_length = shader_length
         self.workgroups_length = workgroups_length

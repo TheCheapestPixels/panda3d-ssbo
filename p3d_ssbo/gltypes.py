@@ -393,7 +393,7 @@ class Buffer(GlType):
             self.ssbo = bind_buffer
         else:
             if initial_data is None:
-                size_or_data = size
+                size_or_data = self.size()
             else:
                 size_or_data = self.pack(initial_data)
             self.ssbo = ShaderBuffer(
@@ -403,11 +403,10 @@ class Buffer(GlType):
             )
 
     def glsl(self):
-        # generate glsl for declaration of ssbo
-        field = self.fields[0]
-        text = (f"layout(std430, binding = 0) buffer {self.glsl_type_name} " "{ ") # f"{field.glsl()}"[:-1] "[] " "}")
-        text += f"{field.glsl_type_name} {field.field_name}[];"
-        text += " };"
+        text = f"layout(std430) buffer {self.glsl_type_name} {{\n"
+        for field in self.fields:
+            text += f"  {field.glsl()}\n"
+        text += "};"
         return text
 
     def _add_element(self, byte_data, py_data):
