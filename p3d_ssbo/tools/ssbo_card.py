@@ -1,9 +1,21 @@
+import enum
+
 from jinja2 import Template
 
 from panda3d.core import NodePath
 from panda3d.core import CardMaker
 from panda3d.core import Shader
 from panda3d.core import CullBinManager
+
+
+class GraphStyle:
+    def __init__(self, bars=True, low=(1, 1, 1), high=(1, 1, 1),
+                 background=(0, 0, 0)):
+        self.bars = bars
+        self.low = low
+        self.high = high
+        self.bg = background
+
 
 vertex_source = """
 #version 430
@@ -32,32 +44,49 @@ out vec4 p3d_FragColor;
 
 void main() {
   int idx = int(floor(v_texcoord.x * float({{array}}.length())));
-  float value = {{array}}[idx].{{key}};
-  if (value >= v_texcoord.y) {
-    {{graph}}
-  } else {
-    p3d_FragColor = vec4(0, 0, 0, 1);
-  }
+  float value_data = {{array}}[idx].{{key}};
+  float value_pos = v_texcoord.y;
+  vec3 color_chart = mix(vec3({{low}}), vec3({{high}}), value_data);
+  vec3 color_background = vec3({{background}});
+  {{graph}}
 }
+""".strip()
+bar_chart_template = """
+  if (value_data >= value_pos) {
+    p3d_FragColor = vec4(color_chart, 1);
+  } else {
+    p3d_FragColor = vec4(color_background, 1);
+  }
+""".strip()
+line_chart_template = """
+  float thickness = 0.01;
+  float dist = abs(value_data - value_pos);
+  float lineStrength = max((thickness-dist) / thickness, 0.0);
+  vec3 color = mix(color_background, color_chart, lineStrength); {}
+  p3d_FragColor = vec4(color, 1);
 """.strip()
 
 
 class SSBOCard:
     # pass value_buffer=True if the buffer does not contain structs
-    def __init__(self, parent: NodePath, data_buffer, array_and_key, fullscreencard=False, barchart=False, debug=False):
+    def __init__(self, parent: NodePath, data_buffer, array_and_key,
+                 fullscreencard=False, style=None, debug=False):
         array_name, key = array_and_key
+        if style is None:
+            style = GraphStyle()
+        if style.bars:
+            graph_style = bar_chart_template
+        else:
+            graph_style = line_chart_template
         render_args = dict(
             ssbo=data_buffer.full_glsl(),
             array=array_name,
             key=key,
+            low=f"{style.low[0]}, {style.low[1]}, {style.low[2]}",
+            high=f"{style.high[0]}, {style.high[1]}, {style.high[2]}",
+            background=f"{style.bg[0]}, {style.bg[1]}, {style.bg[2]}",
+            graph=graph_style,
         )
-        #import pdb; pdb.set_trace()
-        if barchart:
-            # show barchart-style data (hard edges)
-            render_args['graph'] = "p3d_FragColor = vec4(1.);"
-        else:
-            # (default) show heatmap-style data (red gradient)
-            render_args['graph'] = "p3d_FragColor = vec4(1.0 - value, value, 0., 1.);"
         template = Template(fragment_template)
         fragment_source = template.render(**render_args)
         if debug:

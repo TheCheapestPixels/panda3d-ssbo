@@ -27,6 +27,7 @@ from p3d_ssbo.algos.random_number_generator import PermutedCongruentialGenerator
 from p3d_ssbo.algos.random_number_generator import MurmurHash
 from p3d_ssbo.algos.bitonic_sort import BitonicSort
 from p3d_ssbo.tools.ssbo_card import SSBOCard
+from p3d_ssbo.tools.ssbo_card import GraphStyle
 
 
 # Let's set up a basic Panda3D application first.
@@ -78,7 +79,19 @@ print("SSBO created.")
 
 
 # Visualization
-card = SSBOCard(base.render, data_buffer, ('data', 'value'))
+style = GraphStyle(
+    bars=True,
+    low=(1,0,0),
+    high=(0,0,1),
+    background=(0,0,0),
+)
+card = SSBOCard(
+    base.render,
+    data_buffer,
+    ('data', 'value'),
+    style=style,
+    debug=True,
+)
 
 
 # The compute shaders. The `debug` argument makes them print their GLSL
@@ -87,12 +100,11 @@ rng = MurmurHash(
 #rng = PermutedCongruentialGenerator(
     data_buffer,
     ('data', 'value'),
-    debug=True,
+    #debug=True,
 )
 sorter = BitonicSort(
     data_buffer,
     ('data', 'value'),
-    # debug=True,
 )
 
 
